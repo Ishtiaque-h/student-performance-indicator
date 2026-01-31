@@ -18,4 +18,4 @@ license = { file = "LICENSE" }
 dependencies = ["numpy", "pandas", "scikit-learn", "seaborn", "matplotlib"]
 
 [project.optional-dependencies]
-dev = ["pytest", "black", "ruff", "matplotlib", "seaborn>=0.13.2"]
+dev = ["pytest", "black", "ruff", "matplotlib", "seaborn>=0.13.2", "catboost", "xgboost"]
