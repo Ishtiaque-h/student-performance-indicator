@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import Optional
 import sys
-from exception import CustomException
+from student_performance.exception import CustomException
 
 LOG_DIR = os.path.join(os.getcwd(), "logs")
 
