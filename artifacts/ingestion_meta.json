@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-02-02T18:16:32",
+  "source_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/data/raw/stud.csv",
+  "n_rows": 1000,
+  "n_cols": 8,
+  "test_size": 0.2,
+  "random_state": 42,
+  "train_rows": 800,
+  "test_rows": 200,
+  "train_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/train.parquet",
+  "test_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/test.parquet"
+}
