@@ -1,24 +1,29 @@
-import logging
+import logging as py_logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
-import sys
-from student_performance.exception import CustomException
-
-LOG_DIR = os.path.join(os.getcwd(), "logs")
 
 
-def _ensure_log_dir() -> None:
-    os.makedirs(LOG_DIR, exist_ok=True)
+def _find_project_root(start: Path | None = None) -> Path:
+    start = (start or Path.cwd()).resolve()
+    for p in [start, *start.parents]:
+        if (p / "pyproject.toml").exists() or (p / ".git").exists():
+            return p
+    return start
 
 
-def _log_file_path() -> str:
-    _ensure_log_dir()
+def _log_dir() -> Path:
+    return _find_project_root() / "logs"
+
+
+def _log_file_path() -> Path:
+    _log_dir().mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return os.path.join(LOG_DIR, f"run_{timestamp}.log")
+    return _log_dir() / f"run_{timestamp}.log"
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
+def get_logger(name: Optional[str] = None) -> py_logging.Logger:
     """
     Returns a configured logger instance.
 
@@ -27,8 +32,8 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     - Use: logger = get_logger(__name__)
     """
     logger_name = name if name else "student_performance"
-    logger = logging.getLogger(logger_name)
-    logger.setLevel(logging.INFO)
+    logger = py_logging.getLogger(logger_name)
+    logger.setLevel(py_logging.INFO)
 
     # Prevent adding handlers multiple times (very common in notebooks/servers)
     if logger.handlers:
@@ -36,19 +41,19 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
 
     log_path = _log_file_path()
 
-    formatter = logging.Formatter(
+    formatter = py_logging.Formatter(
         fmt="[%(asctime)s] [%(levelname)s] [%(name)s] Line %(lineno)d - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler = py_logging.StreamHandler()
+    console_handler.setLevel(py_logging.INFO)
     console_handler.setFormatter(formatter)
 
     # File handler
-    file_handler = logging.FileHandler(log_path)
-    file_handler.setLevel(logging.INFO)
+    file_handler = py_logging.FileHandler(str(log_path))
+    file_handler.setLevel(py_logging.INFO)
     file_handler.setFormatter(formatter)
 
     logger.addHandler(console_handler)
@@ -61,5 +66,5 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     return logger
 
 
-# Convenience default logger (optional)
+# Convenience default logger
 logging = get_logger("student_performance")
