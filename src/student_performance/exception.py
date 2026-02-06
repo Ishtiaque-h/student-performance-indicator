@@ -13,8 +13,11 @@ def _format_error_details(error: BaseException, error_detail: sys) -> str:
         # Fallback when traceback is not available
         return f"Error: {str(error)}"
 
-    file_name = exc_tb.tb_frame.f_code.co_filename
-    line_number = exc_tb.tb_lineno
+    tb = exc_tb
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    file_name = tb.tb_frame.f_code.co_filename
+    line_number = tb.tb_lineno
 
     return (
         f"Error occurred in python script: [{file_name}] "
