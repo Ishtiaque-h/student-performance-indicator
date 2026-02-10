@@ -1,7 +1,9 @@
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Tuple
+from threading import Lock
 
 import numpy as np
 import pandas as pd
@@ -10,33 +12,71 @@ from student_performance.exception import CustomException
 from student_performance.logger import logging
 from student_performance.utils import find_project_root, load_object
 from student_performance.components.config import CONFIG
+from student_performance.artifacts_gcs import download_artifacts_from_gcs
 
 
 @dataclass
 class PredictPipelineConfig:
-    artifacts_dir: Path = Path("artifacts")
-    preprocessor_path: Path = artifacts_dir / "preprocessor.pkl"
-    model_path: Path = artifacts_dir / "model.pkl"
+    artifacts_dir: Path
+    preprocessor_path: Path
+    model_path: Path
 
 
 class PredictPipeline:
+    _lock = Lock()  # protects download + first load
+
     def __init__(self):
-        self.config = PredictPipelineConfig()
+        root = find_project_root()
 
-        repo_root = find_project_root()
-        self.config.artifacts_dir = CONFIG.artifacts.artifacts_dir(repo_root)
-        self.config.preprocessor_path = CONFIG.artifacts.preprocessor_path(repo_root)
-        self.config.model_path = CONFIG.artifacts.model_path(repo_root)
+        default_artifacts_dir = CONFIG.artifacts.artifacts_dir(root)
+        artifacts_dir = Path(os.getenv("ARTIFACTS_DIR", str(default_artifacts_dir))).expanduser().resolve()
 
-    def _load_artifacts(self):
-        if not self.config.preprocessor_path.exists():
-            raise FileNotFoundError(f"Preprocessor not found at: {self.config.preprocessor_path}")
-        if not self.config.model_path.exists():
-            raise FileNotFoundError(f"Model not found at: {self.config.model_path}")
+        self.config = PredictPipelineConfig(
+            artifacts_dir=artifacts_dir,
+            preprocessor_path=artifacts_dir / CONFIG.artifacts.preprocessor_name,
+            model_path=artifacts_dir / CONFIG.artifacts.model_name,
+        )
 
-        preprocessor = load_object(str(self.config.preprocessor_path))
-        model = load_object(str(self.config.model_path))
-        return preprocessor, model
+        # in-memory cache
+        self._preprocessor: Any = None
+        self._model: Any = None
+
+    def _ensure_artifacts(self) -> None:
+        # If both exist, do nothing
+        if self.config.preprocessor_path.exists() and self.config.model_path.exists():
+            return
+
+        gcs_uri = os.getenv("GCS_ARTIFACTS_URI", "").strip()
+        if not gcs_uri:
+            raise FileNotFoundError(
+                f"Artifacts not found locally in {self.config.artifacts_dir} and GCS_ARTIFACTS_URI is not set."
+            )
+
+        # make sure destination exists
+        self.config.artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        logging.info(f"Artifacts missing locally; downloading from {gcs_uri} -> {self.config.artifacts_dir}")
+        download_artifacts_from_gcs(
+            gcs_uri=gcs_uri,
+            local_dir=self.config.artifacts_dir,
+            filenames=[CONFIG.artifacts.preprocessor_name, CONFIG.artifacts.model_name],
+        )
+
+    def _load_artifacts(self) -> Tuple[Any, Any]:
+        # Fast path: already loaded in memory
+        if self._preprocessor is not None and self._model is not None:
+            return self._preprocessor, self._model
+
+        # Slow path: ensure + load once (thread-safe)
+        with self._lock:
+            if self._preprocessor is not None and self._model is not None:
+                return self._preprocessor, self._model
+
+            self._ensure_artifacts()
+
+            self._preprocessor = load_object(str(self.config.preprocessor_path))
+            self._model = load_object(str(self.config.model_path))
+            return self._preprocessor, self._model
 
     def _to_dataframe(self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]) -> pd.DataFrame:
         if isinstance(X, pd.DataFrame):
@@ -48,11 +88,6 @@ class PredictPipeline:
         raise TypeError("X must be a pandas DataFrame, a dict, or a list of dicts.")
 
     def _align_to_training_schema(self, df: pd.DataFrame, preprocessor: Any) -> pd.DataFrame:
-        """
-        Align inference input to exactly the columns the preprocessor was fit on.
-        - validates missing required columns
-        - drops extra columns by reindexing
-        """
         required = getattr(preprocessor, "feature_names_in_", None)
         if required is None:
             return df
@@ -70,21 +105,18 @@ class PredictPipeline:
             preprocessor, model = self._load_artifacts()
             df = self._to_dataframe(X)
 
-            # Drop target if someone accidentally includes it
+            # Drop target if accidentally included
             target = CONFIG.dataset.target_col
             if target in df.columns:
                 df = df.drop(columns=[target])
 
-            # Drop any configured drop_cols (keeps inference consistent with training)
+            # Drop configured leak columns if present
             drop_cols = CONFIG.dataset.drop_cols or []
             cols_to_drop = [c for c in drop_cols if c in df.columns]
             if cols_to_drop:
                 df = df.drop(columns=cols_to_drop)
 
-            # Enforce training schema
             df = self._align_to_training_schema(df, preprocessor)
-
-            logging.info(f"Input shape (before transform): {df.shape}")
 
             X_transformed = preprocessor.transform(df)
             preds = model.predict(X_transformed)
@@ -93,19 +125,11 @@ class PredictPipeline:
             logging.info(f"Prediction completed. Output shape: {preds.shape}")
             return preds
 
+        except ValueError as e:
+            # user-input/schema error: keep it as ValueError
+            logging.error(f"Bad prediction input: {e}")
+            raise
+
         except Exception as e:
             logging.error("Prediction failed")
             raise CustomException(e, sys)
-
-
-if __name__ == "__main__":
-    sample = {
-        "gender": "female",
-        "race_ethnicity": "group B",
-        "parental_level_of_education": "bachelor's degree",
-        "lunch": "standard",
-        "test_preparation_course": "none",
-    }
-
-    preds = PredictPipeline().predict(sample)
-    print(f"Predicted {CONFIG.dataset.target_col}: {preds[0]:.2f}")
