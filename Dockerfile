@@ -29,4 +29,4 @@ EXPOSE 8080
 
 # Example: if api.py is at src/student_performance/api.py then :
 #   student_performance.api:app
-CMD ["sh", "-c", "exec uvicorn student_performance.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "uvicorn student_performance.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
