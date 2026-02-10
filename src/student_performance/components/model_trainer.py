@@ -33,11 +33,21 @@ except Exception:
 class DensePredictWrapper:
     """
     Ensures .fit()/.predict() work even if X is a scipy sparse matrix.
-    Use only when the downstream estimator cannot handle sparse.
+    Pickle-safe (avoids recursion during dill/pickle loading).
     """
     def __init__(self, estimator: Any):
         self.estimator = estimator
 
+    # ---- pickle / dill safety ----
+    def __getstate__(self):
+        # Keep state minimal and explicit
+        return {"estimator": self.estimator}
+
+    def __setstate__(self, state):
+        # Restore without touching __getattr__
+        self.estimator = state["estimator"]
+
+    # ---- sklearn-like API ----
     def fit(self, X: Any, y: Any = None):
         try:
             from scipy import sparse
@@ -58,8 +68,13 @@ class DensePredictWrapper:
         return self.estimator.predict(X)
 
     def __getattr__(self, name: str):
-        return getattr(self.estimator, name)
-
+        """
+        Proxy everything else to underlying estimator.
+        IMPORTANT: use object.__getattribute__ so we never recurse on 'estimator'.
+        """
+        est = object.__getattribute__(self, "estimator")
+        return getattr(est, name)
+    
 
 @dataclass
 class ModelTrainerConfig:
@@ -265,5 +280,5 @@ class ModelTrainer:
             return best_name, model_report
 
         except Exception as e:
-            logging.error("Error occurred during model training")
+            logging.exception("Error occurred during model training")
             raise CustomException(e, sys)
