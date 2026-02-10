@@ -53,4 +53,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Cloud Run injects the PORT environment variable (default 8080)
+    # You MUST listen on 0.0.0.0 to be accessible outside the container
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
