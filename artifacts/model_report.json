@@ -1,0 +1,254 @@
+{
+  "models": {
+    "LinearRegression": {
+      "error": "This LinearRegression instance is not fitted yet. Call 'fit' with appropriate arguments before using this estimator."
+    },
+    "Ridge": {
+      "random_search": {
+        "best_params": {
+          "alpha": 10.0
+        },
+        "cv_best_score": 0.2437748939186072,
+        "n_iter": 25
+      },
+      "grid_search": {
+        "best_params": {
+          "alpha": 10.0
+        },
+        "cv_best_score": 0.2437748939186072
+      },
+      "train": {
+        "mae": 10.46787359673305,
+        "rmse": 12.862832794849995,
+        "r2": 0.26611526928210527
+      },
+      "test": {
+        "mae": 11.285701323363583,
+        "rmse": 14.163730344542984,
+        "r2": 0.17558734144332455
+      }
+    },
+    "Lasso": {
+      "random_search": {
+        "best_params": {
+          "alpha": 0.1
+        },
+        "cv_best_score": 0.24406459055346302,
+        "n_iter": 25
+      },
+      "grid_search": {
+        "best_params": {
+          "alpha": 0.1
+        },
+        "cv_best_score": 0.24406459055346302
+      },
+      "train": {
+        "mae": 10.481595623185376,
+        "rmse": 12.881341655130637,
+        "r2": 0.2640017157600789
+      },
+      "test": {
+        "mae": 11.36443416244255,
+        "rmse": 14.251134119092585,
+        "r2": 0.1653811166656607
+      }
+    },
+    "KNN": {
+      "random_search": {
+        "best_params": {
+          "weights": "uniform",
+          "p": 1,
+          "n_neighbors": 9
+        },
+        "cv_best_score": 0.15246959398258936,
+        "n_iter": 25
+      },
+      "grid_search": {
+        "best_params": null,
+        "cv_best_score": null
+      },
+      "train": {
+        "mae": 10.049444444444445,
+        "rmse": 12.483171387962058,
+        "r2": 0.3087988218044061
+      },
+      "test": {
+        "mae": 12.356111111111108,
+        "rmse": 15.556557507414084,
+        "r2": 0.005473523778074085
+      }
+    },
+    "DecisionTree": {
+      "random_search": {
+        "best_params": {
+          "max_depth": 5,
+          "criterion": "poisson"
+        },
+        "cv_best_score": 0.09076243095005047,
+        "n_iter": 25
+      },
+      "grid_search": {
+        "best_params": null,
+        "cv_best_score": null
+      },
+      "train": {
+        "mae": 10.208272481984759,
+        "rmse": 12.700535001767111,
+        "r2": 0.2845181277566823
+      },
+      "test": {
+        "mae": 11.580407071611617,
+        "rmse": 14.870998360237603,
+        "r2": 0.09119731111000362
+      }
+    },
+    "RandomForest": {
+      "random_search": {
+        "best_params": {
+          "n_estimators": 400,
+          "min_samples_split": 5,
+          "max_features": "sqrt",
+          "max_depth": 5
+        },
+        "cv_best_score": 0.21094508020202002,
+        "n_iter": 25
+      },
+      "grid_search": {
+        "best_params": {
+          "max_depth": 5,
+          "max_features": "sqrt",
+          "n_estimators": 400
+        },
+        "cv_best_score": 0.21094508020202002
+      },
+      "train": {
+        "mae": 10.242194161629557,
+        "rmse": 12.628946988026495,
+        "r2": 0.29256118619748805
+      },
+      "test": {
+        "mae": 11.486428289842404,
+        "rmse": 14.51210659050651,
+        "r2": 0.13453348220329175
+      }
+    },
+    "AdaBoost": {
+      "random_search": {
+        "best_params": {
+          "n_estimators": 64,
+          "learning_rate": 0.1
+        },
+        "cv_best_score": 0.2030855039103839,
+        "n_iter": 25
+      },
+      "grid_search": {
+        "best_params": null,
+        "cv_best_score": null
+      },
+      "train": {
+        "mae": 10.652502840175071,
+        "rmse": 12.996014844515011,
+        "r2": 0.2508392757784973
+      },
+      "test": {
+        "mae": 11.49416585601134,
+        "rmse": 14.563809244227981,
+        "r2": 0.1283556573797625
+      }
+    },
+    "GradientBoosting": {
+      "random_search": {
+        "best_params": {
+          "subsample": 0.85,
+          "n_estimators": 50,
+          "max_depth": 2,
+          "learning_rate": 0.1
+        },
+        "cv_best_score": 0.2218284533068103,
+        "n_iter": 25
+      },
+      "grid_search": {
+        "best_params": {
+          "learning_rate": 0.05,
+          "n_estimators": 100,
+          "subsample": 0.75
+        },
+        "cv_best_score": 0.22723276238107112
+      },
+      "train": {
+        "mae": 10.361089517783975,
+        "rmse": 12.753825586906258,
+        "r2": 0.27850130408498563
+      },
+      "test": {
+        "mae": 11.441910304347493,
+        "rmse": 14.404179002195226,
+        "r2": 0.14735868762479798
+      }
+    },
+    "XGBoost": {
+      "random_search": {
+        "best_params": {
+          "subsample": 0.7,
+          "n_estimators": 600,
+          "max_depth": 3,
+          "learning_rate": 0.01,
+          "colsample_bytree": 0.7
+        },
+        "cv_best_score": 0.20527316331863404,
+        "n_iter": 25
+      },
+      "grid_search": {
+        "best_params": {
+          "colsample_bytree": 0.6,
+          "learning_rate": 0.01,
+          "max_depth": 2,
+          "n_estimators": 500,
+          "subsample": 0.6
+        },
+        "cv_best_score": 0.22961368560791015
+      },
+      "train": {
+        "mae": 10.389969825744629,
+        "rmse": 12.782615085071049,
+        "r2": 0.2752401828765869
+      },
+      "test": {
+        "mae": 11.437447547912598,
+        "rmse": 14.39887146236289,
+        "r2": 0.14798688888549805
+      }
+    },
+    "CatBoost": {
+      "error": "The following error was raised: 'CatBoostRegressor' object has no attribute '__sklearn_tags__'. It seems that there are no classes that implement `__sklearn_tags__` in the MRO and/or all classes in the MRO call `super().__sklearn_tags__()`. Make sure to inherit from `BaseEstimator` which implements `__sklearn_tags__` (or alternatively define `__sklearn_tags__` but we don't recommend this approach). Note that `BaseEstimator` needs to be on the right side of other Mixins in the inheritance order."
+    }
+  },
+  "best_model": {
+    "name": "Lasso",
+    "selection_score": 0.24406459055346302,
+    "selection_source": "grid_cv",
+    "test_r2": 0.1653811166656607,
+    "requires_dense_at_inference": false,
+    "model_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/model.pkl"
+  },
+  "run_config": {
+    "tuning": {
+      "scoring": "r2",
+      "cv": 5,
+      "n_jobs": -1,
+      "verbose": 0,
+      "random_n_iter": 25,
+      "random_seed": 42,
+      "prefer_cv_for_selection": true
+    },
+    "dense_safety": {
+      "dense_feature_threshold": 5000,
+      "dense_cell_threshold": 5000000
+    }
+  },
+  "artifacts": {
+    "artifacts_dir": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts",
+    "model_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/model.pkl",
+    "report_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/model_report.json"
+  }
+}

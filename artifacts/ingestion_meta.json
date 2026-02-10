@@ -1,12 +1,21 @@
 {
-  "timestamp": "2026-02-02T18:16:32",
+  "timestamp": "2026-02-09T22:08:21",
   "source_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/data/raw/stud.csv",
+  "source_md5": "72e8feb9e6dd40e0cc9b4563bdece775",
   "n_rows": 1000,
   "n_cols": 8,
-  "test_size": 0.2,
-  "random_state": 42,
-  "train_rows": 800,
-  "test_rows": 200,
-  "train_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/train.parquet",
-  "test_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/test.parquet"
+  "split": {
+    "test_size": 0.2,
+    "random_state": 42,
+    "shuffle": true
+  },
+  "artifacts": {
+    "raw_data_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/raw_data.csv",
+    "train_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/train.parquet",
+    "test_path": "/Users/ishtisdream/Desktop/ML/student-performance-indicator/artifacts/test.parquet"
+  },
+  "rows": {
+    "train_rows": 800,
+    "test_rows": 200
+  }
 }
