@@ -1,0 +1,88 @@
+name: Retrain and Rollout
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"  # every Monday 07:00 UTC
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+  MODEL_REGISTRY_BASE_URI: ${{ vars.MODEL_REGISTRY_URI }} # gs://bucket/student-performance
+  MLFLOW_TRACKING_URI: file:///tmp/mlruns
+  MLFLOW_EXPERIMENT_NAME: student-performance
+  MLFLOW_GCS_URI: ${{ vars.MLFLOW_GCS_URI }} # e.g. gs://bucket/mlflow/student-performance
+
+# after training finishes, sync mlruns to GCS in a job step
+
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[api,dev,ml,mlops]"  # includes api, dev, ml, mlops deps; remove extras you don't need for faster runs
+      - name: Train + publish artifacts
+        id: publish
+        run: |
+          python scripts/train_and_publish.py --registry-uri "${MODEL_REGISTRY_BASE_URI}" --also-latest | tee publish.out
+          RUN_ID=$(grep '^RUN_ID=' publish.out | cut -d= -f2)
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+
+      - name: Sync mlruns to GCS
+        run: |
+          gsutil -m rsync -r ${{ env.MLFLOW_TRACKING_URI }} "${{ env.MLFLOW_GCS_URI }}"
+
+
+      - name: Gate and promote model
+        run: |
+          # 1) Read metric from model_report.json
+          TEST_R2=$(python -c "import json;print(json.load(open('artifacts/model_report.json'))['best_model']['test_r2'])")
+          echo "TEST_R2=$TEST_R2" >> $GITHUB_ENV
+
+          # 2) Gate promotion (Tier 1: fixed threshold)
+          python - <<'PY'
+          import os
+          thr = float(os.getenv("PROMOTE_IF_TEST_R2_AT_LEAST", "0.10"))
+          val = float(os.getenv("TEST_R2", "0"))
+          print(f"threshold={thr}, test_r2={val}")
+          if val < thr:
+            raise SystemExit("Not promoting: metric below threshold.")
+          PY
+
+          # 3) Upload to GCS (new version)
+          MODEL_VERSION="run-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          GCS_DEST="${MODEL_REGISTRY_BASE_URI}/${MODEL_VERSION}"   # e.g. gs://bucket/student-performance
+          gsutil -m rsync -r artifacts "${GCS_DEST}"
+
+          # 4) to view runs in MLflow UI: mlflow ui --backend-store-uri file:///tmp/mlruns
+
+
+          # 5) Point Cloud Run to the new model
+          gcloud run services update "${CLOUD_RUN_SERVICE}" \
+          --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" \
+          --set-env-vars "MODEL_REGISTRY_URI=${GCS_DEST},ARTIFACTS_DIR=/tmp/artifacts,FORCE_MODEL_DOWNLOAD=1"
+
