@@ -1,4 +1,4 @@
-import sys
+import sys, os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple
@@ -11,6 +11,7 @@ from student_performance.components.config import CONFIG
 from student_performance.components.data_ingestion import DataIngestion
 from student_performance.components.data_transformation import DataTransformation
 from student_performance.components.model_trainer import ModelTrainer
+from student_performance.mlops.mlflow_logger import log_training_run
 
 
 @dataclass
@@ -60,15 +61,17 @@ class TrainPipeline:
             trainer = ModelTrainer()
             best_model_name, report = trainer.initiate_model_trainer(X_train, y_train, X_test, y_test)
 
+            log_training_run(
+                best_model_name=best_model_name,
+                report=report,
+                artifacts_dir=self.config.artifacts_dir,
+                run_name=os.getenv("GITHUB_REF_NAME"),
+            )
+
             logging.info(f"===== TRAIN PIPELINE COMPLETED: best_model={best_model_name} =====")
             return best_model_name, report
 
         except Exception as e:
-            logging.error("TRAIN PIPELINE FAILED")
+            logging.exception("TRAIN PIPELINE FAILED")
             raise CustomException(e, sys)
 
-
-if __name__ == "__main__":
-    best_model_name, report = TrainPipeline().run()
-    print(f"\nBest model: {best_model_name}")
-    print(f"Best test R2: {report.get('best_model', {}).get('test_r2')}")
