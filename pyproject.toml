@@ -15,7 +15,62 @@ description = "Student performance prediction with MLOps pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-dependencies = ["numpy", "pandas", "scikit-learn", "seaborn", "matplotlib", "pyarrow"]
+
+# Runtime deps needed to run training + inference + API
+dependencies = [
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "pyarrow",
+  "dill",
+  "jinja2",
+  "google-cloud-storage",
+]
 
 [project.optional-dependencies]
-dev = ["pytest", "black", "ruff", "matplotlib", "seaborn>=0.13.2", "catboost", "xgboost", "dill"]
+
+# API runtime
+api = [
+  "fastapi>=0.110.0",
+  "uvicorn[standard]>=0.27.0",
+  "pydantic>=2.0.0",
+]
+
+# Heavy/optional ML models (only install if you need them)
+ml = [
+  "xgboost",
+  "catboost",
+]
+
+mlops = [
+  "mlflow>=2.9",
+]
+
+# Developer tooling
+dev = [
+  "pytest",
+  "black",
+  "ruff",
+  "matplotlib",
+  "seaborn>=0.13.2",
+]
+
+# For local API serving (dev/prod). gunicorn is mainly for Linux containers.
+deploy = [
+  #"uvicorn[standard]>=0.27",
+  "gunicorn>=21.2",
+]
+
+[tool.setuptools.package-data]
+student_performance = ["templates/*.html", "static/*.js"]
+
+[project.scripts]
+# Convenience commands (optional but nice)
+train = "student_performance.cli:train_main"
+# For uvicorn we usually run via CLI, but we can also keep a script
+# serve = "student_performance.api:main"
+
+[tool.pytest.ini_options]
+markers = [
+  "smoke: quick end-to-end smoke tests",
+]
