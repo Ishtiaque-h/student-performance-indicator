@@ -19,7 +19,7 @@ COPY src /app/src
 # Install your package + deps
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir . \
- && pip install --no-cache-dir ".[api]"  # for serving the API; add other server deps if needed
+ && pip install --no-cache-dir ".[api,mlops]"  # for serving the API; add other server deps if needed
 
 # Copy artifacts
 #COPY artifacts /app/artifacts
@@ -30,4 +30,5 @@ EXPOSE 8080
 
 # Example: if api.py is at src/student_performance/api.py then :
 #   student_performance.api:app
-CMD ["sh", "-c", "uvicorn student_performance.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Use 'python -m uvicorn' to bypass PATH issues
+CMD ["sh", "-c", "python -m uvicorn student_performance.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
