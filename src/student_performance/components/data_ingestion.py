@@ -102,9 +102,5 @@ class DataIngestion:
             return str(train_data_path), str(test_data_path)
 
         except Exception as e:
-            logging.error("Error occurred during data ingestion")
+            logging.exception("Error occurred during data ingestion")
             raise CustomException(e, sys)
-
-
-if __name__ == "__main__":
-    DataIngestion().initiate_data_ingestion()
