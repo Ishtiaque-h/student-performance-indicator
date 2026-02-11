@@ -70,7 +70,8 @@ jobs:
 
       - name: Show deploy target
         run: |
-          echo "ENVIRONMENT=${job.environment.name}"  # staging or production
+          ENVIRONMENT="${{ job.environment.name }}"  # staging or production
+          echo "ENVIRONMENT=$ENVIRONMENT" >> "$GITHUB_ENV"
           echo "PROJECT_ID=${{ env.PROJECT_ID }}"
           echo "REGION=${{ env.REGION }}"
           echo "SERVICE=${{ env.SERVICE }}"
