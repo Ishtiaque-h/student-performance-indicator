@@ -22,9 +22,8 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,api,mlops]"
           # If CI fails because optional models import at module import-time:
-          # pip install -e ".[api, dev, ml, mlops]"
 
       - name: Lint (ruff)
         run: ruff check .

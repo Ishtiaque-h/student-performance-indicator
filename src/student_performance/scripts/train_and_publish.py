@@ -23,12 +23,10 @@ def main() -> None:
     args = p.parse_args()
 
     # Train locally in repo context
-    _ = TrainPipeline().run()
+    TrainPipeline().run()
 
     repo_root = find_project_root()
     artifacts_dir = repo_root / "artifacts"
-
-    run_id = make_run_id()
 
     files = [
         "model.pkl",
@@ -36,6 +34,12 @@ def main() -> None:
         "model_report.json",
         "ingestion_meta.json",
     ]
+
+    missing = [f for f in files if not (artifacts_dir / f).exists()]
+    if missing:
+        raise FileNotFoundError(f"Missing artifacts in {artifacts_dir}: {missing}")
+
+    run_id = make_run_id()
 
     run_uri, latest_uri = upload_artifacts(
         local_dir=artifacts_dir,
@@ -45,7 +49,7 @@ def main() -> None:
         also_update_latest=args.also_latest,
     )
 
-    # Emit a parseable line for GitHub Actions
+    # Emit parseable lines for GitHub Actions
     print(f"RUN_ID={run_id}")
     print(f"RUN_URI={run_uri}")
     if args.also_latest:
@@ -53,7 +57,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # Cloud Run injects the PORT environment variable (default 8080)
-    # You MUST listen on 0.0.0.0 to be accessible outside the container
-    port = int(os.getenv("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    main()

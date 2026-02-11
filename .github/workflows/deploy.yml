@@ -8,17 +8,17 @@ on:
 permissions:
   contents: read
   id-token: write
-
-env:
-  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-  GCP_REGION: ${{ vars.GCP_REGION }}
-  CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
-  ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }}
-  IMAGE: ${{ vars.IMAGE_NAME }}
-
+ 
 jobs:
   deploy:
+    environment: staging
     runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }} # e.g., student-performance-indicator
+      REGION: ${{ vars.GCP_REGION }} # e.g., us-central1
+      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }} # e.g., student-performance-api-staging
+      ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }} # e.g., student-performance
+
     steps:
       - uses: actions/checkout@v4
 
@@ -31,25 +31,39 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ env.GCP_PROJECT_ID }}
+          project_id: ${{ env.PROJECT_ID }}
       # setup-gcloud docs. :contentReference[oaicite:2]{index=2}
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       - name: Build & Push image
         run: |
-          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.CLOUD_RUN_SERVICE }}:${{ github.sha }}"
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
-          docker build -t "$IMAGE" .
-          docker push "$IMAGE"
+          IMAGE_URI="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE }}:${{ github.sha }}"
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+
+      - name: Confirm image being deployed
+        run: |
+          echo "Deploying image: ${IMAGE_URI}"
+          
+      - name: Show deploy target
+        run: |
+          echo "ENVIRONMENT=${{ job.environment.name }}"  # staging or production
+          echo "PROJECT_ID=${{ env.PROJECT_ID }}"
+          echo "REGION=${{ env.REGION }}"
+          echo "SERVICE=${{ env.SERVICE }}"
 
       - id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ${{ env.CLOUD_RUN_SERVICE }}
-          region: ${{ env.GCP_REGION }}
-          image: ${{ env.IMAGE }}
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE_URI }}
+          env_vars: |-
+            ARTIFACTS_DIR=/tmp/artifacts
+          env_vars_update_strategy: merge
       # deploy-cloudrun docs. :contentReference[oaicite:3]{index=3}
 
       - name: Output URL
