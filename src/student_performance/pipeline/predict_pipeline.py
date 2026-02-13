@@ -46,7 +46,7 @@ class PredictPipeline:
         if self.config.preprocessor_path.exists() and self.config.model_path.exists():
             return
 
-        gcs_uri = os.getenv("GCS_ARTIFACTS_URI", "").strip()
+        gcs_uri = os.getenv("GCS_ARTIFACTS_URI", "").strip() or os.getenv("MODEL_REGISTRY_URI", "").strip()  # fallback for legacy env var name
         if not gcs_uri:
             raise FileNotFoundError(
                 f"Artifacts not found locally in {self.config.artifacts_dir} and GCS_ARTIFACTS_URI is not set."

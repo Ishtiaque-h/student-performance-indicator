@@ -1,3 +1,5 @@
+import logging
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -27,7 +29,9 @@ class StudentFeatures(BaseModel):
 # ---- Lifespan (preferred over on_event startup) ----
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.pipeline = PredictPipeline()
+    pipeline = PredictPipeline()
+    pipeline._load_artifacts()  # pre-load artifacts at startup; subsequent requests will use in-memory cache
+    app.state.pipeline = pipeline
     yield
     # nothing to cleanup
 
@@ -85,6 +89,8 @@ def meta(request: Request) -> dict:
     return info
 
 
+logger = logging.getLogger("uvicorn.error")
+
 @app.post("/predict")
 def predict_one(payload: StudentFeatures, request: Request) -> dict:
     try:
@@ -92,10 +98,9 @@ def predict_one(payload: StudentFeatures, request: Request) -> dict:
         pred = pipeline.predict(payload.model_dump())[0]
         return {"prediction": float(pred)}
     except ValueError as e:
-        # input/schema errors should be 400
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        # avoid leaking stack traces in API responses
+    except Exception as e:
+        logger.exception("Prediction failed")  # <-- this prints stack trace to Cloud Run logs
         raise HTTPException(status_code=500, detail="Prediction failed")
 
 
@@ -109,5 +114,6 @@ def predict_batch(payload: List[StudentFeatures], request: Request) -> dict:
         return {"prediction": [float(x) for x in preds]}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
+    except Exception as e:
+        logger.exception("Prediction failed")  # <-- this prints stack trace to Cloud Run logs
         raise HTTPException(status_code=500, detail="Prediction failed")
