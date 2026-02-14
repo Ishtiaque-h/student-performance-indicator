@@ -10,9 +10,6 @@ permissions:
   contents: read
   id-token: write
 
-env:
-  MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }} # gs://bucket/student-performance
-
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -42,6 +39,7 @@ jobs:
       REGION: ${{ vars.GCP_REGION }} # e.g., us-central1
       SERVICE: ${{ vars.CLOUD_RUN_SERVICE }} # e.g., student-performance-api (production)
       ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }} # e.g., student-performance
+      MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }} # gs://bucket/student-performance
 
 
     steps:
@@ -86,7 +84,7 @@ jobs:
 
           ENV_VARS="ARTIFACTS_DIR=/tmp/artifacts"
           if [ -n "${MODEL_REGISTRY_URI:-}" ]; then
-            ENV_VARS="${ENV_VARS},MODEL_REGISTRY_URI=${MODEL_REGISTRY_URI}"
+            ENV_VARS="${ENV_VARS},GCS_ARTIFACTS_URI=${MODEL_REGISTRY_URI}"
           fi
 
           gcloud run deploy "${SERVICE}" \
