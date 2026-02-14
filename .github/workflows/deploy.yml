@@ -61,9 +61,6 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.IMAGE_URI }}
-          env_vars: |-
-            ARTIFACTS_DIR=/tmp/artifacts
-          env_vars_update_strategy: merge
       # deploy-cloudrun docs. :contentReference[oaicite:3]{index=3}
 
       - name: Output URL

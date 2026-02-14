@@ -82,9 +82,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          ENV_VARS="ARTIFACTS_DIR=/tmp/artifacts"
+          ENV_VARS=""
+          
+          # Only set GCS URI if you want the app to have the OPTION to download 
+          # (though it should find local files first).
           if [ -n "${MODEL_REGISTRY_URI:-}" ]; then
-            ENV_VARS="${ENV_VARS},GCS_ARTIFACTS_URI=${MODEL_REGISTRY_URI}"
+            ENV_VARS="GCS_ARTIFACTS_URI=${MODEL_REGISTRY_URI}"
+          fi
+          
+          # Only add the flag if ENV_VARS is not empty
+          if [ -n "$ENV_VARS" ]; then
+             UPDATE_ARGS="--update-env-vars $ENV_VARS"
+          else
+             UPDATE_ARGS=""
           fi
 
           gcloud run deploy "${SERVICE}" \
@@ -95,7 +105,7 @@ jobs:
             --allow-unauthenticated \
             --command "" \
             --args "" \
-            --update-env-vars "${ENV_VARS}"
+            $UPDATE_ARGS
 
       - name: Post-deploy smoke
         shell: bash
