@@ -42,17 +42,26 @@ class PredictPipeline:
         self._model: Any = None
 
     def _ensure_artifacts(self) -> None:
-        # If both exist, do nothing
+        force = os.getenv("FORCE_MODEL_DOWNLOAD", "").strip().lower() in {"1", "true", "yes"}
+
+        if force:
+            # remove any existing local artifacts to avoid serving stale files
+            for p in (self.config.preprocessor_path, self.config.model_path):
+                try:
+                    p.unlink()
+                except FileNotFoundError:
+                    pass
+
+        # If both exist and we are not forcing, do nothing
         if self.config.preprocessor_path.exists() and self.config.model_path.exists():
             return
 
-        gcs_uri = os.getenv("GCS_ARTIFACTS_URI", "").strip() or os.getenv("MODEL_REGISTRY_URI", "").strip()  # fallback for legacy env var name
+        gcs_uri = os.getenv("GCS_ARTIFACTS_URI", "").strip() or os.getenv("MODEL_REGISTRY_URI", "").strip()
         if not gcs_uri:
             raise FileNotFoundError(
                 f"Artifacts not found locally in {self.config.artifacts_dir} and GCS_ARTIFACTS_URI is not set."
             )
 
-        # make sure destination exists
         self.config.artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         logging.info(f"Artifacts missing locally; downloading from {gcs_uri} -> {self.config.artifacts_dir}")
@@ -61,6 +70,14 @@ class PredictPipeline:
             local_dir=self.config.artifacts_dir,
             filenames=[CONFIG.artifacts.preprocessor_name, CONFIG.artifacts.model_name],
         )
+
+        # hard check after download (better error than a later load failure)
+        if not (self.config.preprocessor_path.exists() and self.config.model_path.exists()):
+            raise FileNotFoundError(
+                f"Downloaded from {gcs_uri} but expected files not found: "
+                f"{self.config.preprocessor_path.name}, {self.config.model_path.name}"
+            )
+
 
     def _load_artifacts(self) -> Tuple[Any, Any]:
         # Fast path: already loaded in memory

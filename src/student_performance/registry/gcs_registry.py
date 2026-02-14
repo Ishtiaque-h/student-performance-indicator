@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable
 
 from google.cloud import storage
 
@@ -53,9 +52,11 @@ def download_required_artifacts(
     if not force and all((local_dir / f).exists() for f in required_files):
         return
 
-    gcs = parse_gs_uri(registry_uri)
+    gcs = parse_gs_uri(registry_uri) 
     client = storage.Client()
     bucket = client.bucket(gcs.bucket)
+    print("GCS client project:", client.project)
+    print("GCS client bucket:", gcs.bucket)
 
     for fname in required_files:
         blob = bucket.blob(_blob_name(gcs.prefix, fname))
@@ -64,42 +65,72 @@ def download_required_artifacts(
         blob.download_to_filename(str(local_dir / fname))
 
 
-def upload_artifacts(
+def _upload_to_prefix(
+    *,
     local_dir: Path,
     registry_base_uri: str,
-    run_id: str,
+    dest_prefix: str,
     files: Iterable[str],
-    also_update_latest: bool = True,
-) -> Tuple[str, str]:
+) -> str:
     """
     Uploads artifacts to:
-      gs://bucket/base_prefix/runs/<run_id>/<file>
+      gs://bucket/<base_prefix>/<dest_prefix>/<file>
 
-    Optionally also writes to:
-      gs://bucket/base_prefix/latest/<file>
-
-    Returns: (run_prefix_uri, latest_prefix_uri)
+    Returns the full prefix URI.
     """
     gcs = parse_gs_uri(registry_base_uri)
     client = storage.Client()
     bucket = client.bucket(gcs.bucket)
 
     base_prefix = gcs.prefix.rstrip("/")
-    run_prefix = f"{base_prefix}/runs/{run_id}".strip("/")
-    latest_prefix = f"{base_prefix}/latest".strip("/")
+    full_prefix = f"{base_prefix}/{dest_prefix}".strip("/")
 
     for fname in files:
         src = local_dir / fname
         if not src.exists():
             raise FileNotFoundError(f"Local artifact missing: {src}")
 
-        # versioned
-        bucket.blob(_blob_name(run_prefix, fname)).upload_from_filename(str(src))
+        bucket.blob(_blob_name(full_prefix, fname)).upload_from_filename(str(src))
 
-        # latest
-        if also_update_latest:
-            bucket.blob(_blob_name(latest_prefix, fname)).upload_from_filename(str(src))
+    return f"gs://{gcs.bucket}/{full_prefix}"
 
-    run_uri = f"gs://{gcs.bucket}/{run_prefix}"
-    latest_uri = f"gs://{gcs.bucket}/{latest_prefix}"
-    return run_uri, latest_uri
+
+def upload_run_index(
+    *,
+    local_dir: Path,
+    registry_base_uri: str,
+    run_id: str,
+    files: Iterable[str],
+) -> str:
+    """
+    Run index upload (immutable history):
+      gs://bucket/<base_prefix>/latest/<run_id>/<file>
+    """
+    return _upload_to_prefix(
+        local_dir=local_dir,
+        registry_base_uri=registry_base_uri,
+        dest_prefix=f"latest/{run_id}",
+        files=files,
+    )
+
+
+def upload_release(
+    *,
+    local_dir: Path,
+    registry_base_uri: str,
+    release_tag: str,
+    files: Iterable[str],
+) -> str:
+    """
+    Serving release upload (versioned):
+      gs://bucket/<base_prefix>/<release_tag>/<file>
+    """
+    release_tag = release_tag.strip().strip("/")
+    if not release_tag:
+        raise ValueError("release_tag must be non-empty")
+    return _upload_to_prefix(
+        local_dir=local_dir,
+        registry_base_uri=registry_base_uri,
+        dest_prefix=release_tag,
+        files=files,
+    )

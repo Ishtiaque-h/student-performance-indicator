@@ -82,20 +82,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          ENV_VARS=""
-          
-          # Only set GCS URI if you want the app to have the OPTION to download 
-          # (though it should find local files first).
-          if [ -n "${MODEL_REGISTRY_URI:-}" ]; then
-            ENV_VARS="GCS_ARTIFACTS_URI=${MODEL_REGISTRY_URI}"
-          fi
-          
-          # Only add the flag if ENV_VARS is not empty
-          if [ -n "$ENV_VARS" ]; then
-             UPDATE_ARGS="--update-env-vars $ENV_VARS"
-          else
-             UPDATE_ARGS=""
-          fi
+          : "${MODEL_REGISTRY_URI:?MODEL_REGISTRY_URI must be set to base, e.g. gs://freshmoon39/student-performance}"
+
+          TAG="${GITHUB_REF_NAME}"   # v*
+          ARTIFACTS_URI="${MODEL_REGISTRY_URI}/${TAG}"
+
+          # Fail fast: do not deploy if release artifacts aren't present exactly where serving expects
+          gcloud storage ls "${ARTIFACTS_URI}/model.pkl" >/dev/null
+          gcloud storage ls "${ARTIFACTS_URI}/preprocessor.pkl" >/dev/null
+
+          ENV_VARS="ARTIFACTS_DIR=/tmp/artifacts,GCS_ARTIFACTS_URI=${ARTIFACTS_URI},FORCE_MODEL_DOWNLOAD=1"
 
           gcloud run deploy "${SERVICE}" \
             --project "${PROJECT_ID}" \
@@ -103,9 +99,7 @@ jobs:
             --image "${IMAGE_URI}" \
             --port 8080 \
             --allow-unauthenticated \
-            --command "" \
-            --args "" \
-            $UPDATE_ARGS
+            --update-env-vars "${ENV_VARS}"
 
       - name: Post-deploy smoke
         shell: bash
@@ -119,9 +113,11 @@ jobs:
 
           echo "Service URL: ${SERVICE_URL}"
 
-          curl -fsS "${SERVICE_URL}/health" | tee /tmp/health.json
+          curl -sS "${SERVICE_URL}/health" | tee /tmp/health.json
+          curl -sS "${SERVICE_URL}/schema" | tee /tmp/schema.json || true
 
-          curl -fsS -X POST "${SERVICE_URL}/predict" \
+          HTTP_CODE="$(curl -sS -o /tmp/predict.json -w "%{http_code}" \
+            -X POST "${SERVICE_URL}/predict" \
             -H "Content-Type: application/json" \
             -d '{
               "gender":"female",
@@ -129,7 +125,10 @@ jobs:
               "parental_level_of_education":"bachelor'\''s degree",
               "lunch":"standard",
               "test_preparation_course":"none"
-            }' | tee /tmp/predict.json
+            }')"
+
+          cat /tmp/predict.json
+          test "$HTTP_CODE" -eq 200
 
           python - <<'PY'
           import json
@@ -137,3 +136,4 @@ jobs:
               obj = json.load(f)
           assert "prediction" in obj, obj
           PY
+
