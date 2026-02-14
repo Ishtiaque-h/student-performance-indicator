@@ -1,7 +1,5 @@
-import logging
-
 from __future__ import annotations
-
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List
@@ -74,19 +72,16 @@ def schema(request: Request) -> Dict[str, Any]:
 @app.get("/meta")
 def meta(request: Request) -> dict:
     pipeline: PredictPipeline = request.app.state.pipeline
-    info = {
+
+    import os
+    return {
         "artifacts_dir": str(pipeline.config.artifacts_dir),
         "model_path": str(pipeline.config.model_path),
         "preprocessor_path": str(pipeline.config.preprocessor_path),
+        "GCS_ARTIFACTS_URI": os.getenv("GCS_ARTIFACTS_URI"),
+        "MODEL_REGISTRY_URI": os.getenv("MODEL_REGISTRY_URI"),
+        "FORCE_MODEL_DOWNLOAD": os.getenv("FORCE_MODEL_DOWNLOAD"),
     }
-
-    # Optional: expose registry URI + report (if present)
-    import os, json
-    info["model_registry_uri"] = os.getenv("MODEL_REGISTRY_URI")
-    if pipeline.config.report_path.exists():
-        info["model_report"] = json.loads(pipeline.config.report_path.read_text())
-
-    return info
 
 
 logger = logging.getLogger("uvicorn.error")
