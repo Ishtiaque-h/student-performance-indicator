@@ -19,7 +19,7 @@ COPY src /app/src
 # Install your package + deps
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir . \
- && pip install --no-cache-dir ".[api,mlops]"  # for serving the API; add other server deps if needed
+ && pip install --no-cache-dir ".[api,ml,mlops]"  # for serving the API; add other server deps if needed
 
 # Copy artifacts
 #COPY artifacts /app/artifacts
