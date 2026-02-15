@@ -1,4 +1,5 @@
-import sys, os
+import sys
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple
@@ -50,16 +51,22 @@ class TrainPipeline:
 
             # 2) Transformation
             transformer = DataTransformation()
-            X_train, y_train, X_test, y_test, preprocessor_path = transformer.initiate_data_transformation(
-                train_path, test_path
+            X_train, y_train, X_test, y_test, preprocessor_path = (
+                transformer.initiate_data_transformation(train_path, test_path)
             )
             logging.info(f"Transformation output -> preprocessor: {preprocessor_path}")
-            logging.info(f"X_train shape: {getattr(X_train, 'shape', None)} | y_train shape: {y_train.shape}")
-            logging.info(f"X_test shape: {getattr(X_test, 'shape', None)} | y_test shape: {y_test.shape}")
+            logging.info(
+                f"X_train shape: {getattr(X_train, 'shape', None)} | y_train shape: {y_train.shape}"
+            )
+            logging.info(
+                f"X_test shape: {getattr(X_test, 'shape', None)} | y_test shape: {y_test.shape}"
+            )
 
             # 3) Training
             trainer = ModelTrainer()
-            best_model_name, report = trainer.initiate_model_trainer(X_train, y_train, X_test, y_test)
+            best_model_name, report = trainer.initiate_model_trainer(
+                X_train, y_train, X_test, y_test
+            )
 
             log_training_run(
                 best_model_name=best_model_name,
@@ -68,10 +75,11 @@ class TrainPipeline:
                 run_name=os.getenv("GITHUB_REF_NAME"),
             )
 
-            logging.info(f"===== TRAIN PIPELINE COMPLETED: best_model={best_model_name} =====")
+            logging.info(
+                f"===== TRAIN PIPELINE COMPLETED: best_model={best_model_name} ====="
+            )
             return best_model_name, report
 
         except Exception as e:
             logging.exception("TRAIN PIPELINE FAILED")
             raise CustomException(e, sys)
-

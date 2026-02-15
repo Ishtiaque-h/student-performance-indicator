@@ -9,7 +9,11 @@ from typing import Any, Dict, Tuple
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
-from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, GradientBoostingRegressor
+from sklearn.ensemble import (
+    RandomForestRegressor,
+    AdaBoostRegressor,
+    GradientBoostingRegressor,
+)
 
 from student_performance.exception import CustomException
 from student_performance.logger import logging
@@ -17,11 +21,11 @@ from student_performance.utils import find_project_root, save_object
 from student_performance.modeling import evaluate_models
 from student_performance.components.config import CONFIG
 
-
 # Optional models
 try:
     from xgboost import XGBRegressor  # type: ignore
     from catboost import CatBoostRegressor  # type: ignore
+
     _HAS_XGBOOST = True
     _HAS_CATBOOST = True
 
@@ -35,6 +39,7 @@ class DensePredictWrapper:
     Ensures .fit()/.predict() work even if X is a scipy sparse matrix.
     Pickle-safe (avoids recursion during dill/pickle loading).
     """
+
     def __init__(self, estimator: Any):
         self.estimator = estimator
 
@@ -51,6 +56,7 @@ class DensePredictWrapper:
     def fit(self, X: Any, y: Any = None):
         try:
             from scipy import sparse
+
             if sparse.issparse(X):
                 X = X.toarray()
         except Exception:
@@ -61,6 +67,7 @@ class DensePredictWrapper:
     def predict(self, X: Any):
         try:
             from scipy import sparse
+
             if sparse.issparse(X):
                 X = X.toarray()
         except Exception:
@@ -74,7 +81,7 @@ class DensePredictWrapper:
         """
         est = object.__getattribute__(self, "estimator")
         return getattr(est, name)
-    
+
 
 @dataclass
 class ModelTrainerConfig:
@@ -91,6 +98,7 @@ class ModelTrainer:
     def _is_sparse(X: Any) -> bool:
         try:
             from scipy import sparse
+
             return sparse.issparse(X)
         except Exception:
             return False
@@ -113,7 +121,9 @@ class ModelTrainer:
                 f"Increase CONFIG.dense_safety.dense_cell_threshold or skip this model."
             )
 
-        logging.info(f"{model_name}: densifying X (rows={n_rows}, features={n_features}).")
+        logging.info(
+            f"{model_name}: densifying X (rows={n_rows}, features={n_features})."
+        )
         return X.toarray()
 
     def initiate_model_trainer(
@@ -147,71 +157,146 @@ class ModelTrainer:
             }
 
             if _HAS_XGBOOST:
-                models["XGBoost"] = XGBRegressor(random_state=42, objective="reg:squarederror")
+                models["XGBoost"] = XGBRegressor(
+                    random_state=42, objective="reg:squarederror"
+                )
             else:
                 logging.info("XGBoost not installed; skipping XGBoost model.")
 
             if _HAS_CATBOOST:
-                models["CatBoost"] = CatBoostRegressor(random_seed=42, verbose=0, loss_function='RMSE')
+                models["CatBoost"] = CatBoostRegressor(
+                    random_seed=42, verbose=0, loss_function="RMSE"
+                )
             else:
                 logging.info("CatBoost not installed; skipping CatBoost model.")
 
             random_params = {
                 "Ridge": {"alpha": [1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0]},
                 "Lasso": {"alpha": [1e-4, 1e-3, 1e-2, 1e-1, 1.0]},
-                "KNN": {"n_neighbors": [3, 5, 7, 9], "weights": ["uniform", "distance"], "p": [1, 2]},
-                "DecisionTree": {"max_depth": [None, 5, 10, 20],
-                                 "criterion": ["squared_error", "friedman_mse", "absolute_error", "poisson"]},
-                "RandomForest": {"n_estimators": [50, 100, 200, 400],
-                                 "max_depth": [None, 5, 10, 20, 30],
-                                 "max_features": ["sqrt", None],
-                                 "min_samples_split": [2, 5, 10]},
-                "AdaBoost": {"n_estimators": [8, 16, 32, 64, 128, 256],
-                             "learning_rate": [0.001, 0.01, 0.1, 0.5]},
-                "GradientBoosting": {"n_estimators": [50, 100, 200, 400],
-                                     "learning_rate": [0.01, 0.05, 0.1, 0.2],
-                                     "subsample": [0.7, 0.85, 1.0],
-                                     "max_depth": [2, 3, 4]},
-                "XGBoost": {"n_estimators": [100, 300, 600],
-                            "learning_rate": [0.01, 0.05, 0.1],
-                            "max_depth": [3, 5, 7],
-                            "subsample": [0.7, 0.85, 1.0],
-                            "colsample_bytree": [0.7, 0.85, 1.0]},
-                "CatBoost": {"iterations": [200, 500, 800],
-                             "learning_rate": [0.01, 0.03, 0.05, 0.1],
-                             "depth": [4, 6, 8, 10],
-                             "l2_leaf_reg": [1, 3, 5, 9]},
+                "KNN": {
+                    "n_neighbors": [3, 5, 7, 9],
+                    "weights": ["uniform", "distance"],
+                    "p": [1, 2],
+                },
+                "DecisionTree": {
+                    "max_depth": [None, 5, 10, 20],
+                    "criterion": [
+                        "squared_error",
+                        "friedman_mse",
+                        "absolute_error",
+                        "poisson",
+                    ],
+                },
+                "RandomForest": {
+                    "n_estimators": [50, 100, 200, 400],
+                    "max_depth": [None, 5, 10, 20, 30],
+                    "max_features": ["sqrt", None],
+                    "min_samples_split": [2, 5, 10],
+                },
+                "AdaBoost": {
+                    "n_estimators": [8, 16, 32, 64, 128, 256],
+                    "learning_rate": [0.001, 0.01, 0.1, 0.5],
+                },
+                "GradientBoosting": {
+                    "n_estimators": [50, 100, 200, 400],
+                    "learning_rate": [0.01, 0.05, 0.1, 0.2],
+                    "subsample": [0.7, 0.85, 1.0],
+                    "max_depth": [2, 3, 4],
+                },
+                "XGBoost": {
+                    "n_estimators": [100, 300, 600],
+                    "learning_rate": [0.01, 0.05, 0.1],
+                    "max_depth": [3, 5, 7],
+                    "subsample": [0.7, 0.85, 1.0],
+                    "colsample_bytree": [0.7, 0.85, 1.0],
+                },
+                "CatBoost": {
+                    "iterations": [200, 500, 800],
+                    "learning_rate": [0.01, 0.03, 0.05, 0.1],
+                    "depth": [4, 6, 8, 10],
+                    "l2_leaf_reg": [1, 3, 5, 9],
+                },
             }
 
             refine_spec = {
                 "Ridge": {"alpha": {"type": "float_log", "factors": [0.3, 1.0, 3.0]}},
                 "Lasso": {"alpha": {"type": "float_log", "factors": [0.3, 1.0, 3.0]}},
                 "RandomForest": {
-                    "n_estimators": {"type": "int_window", "deltas": [-50, 0, 50], "min": 20, "max": 2000},
-                    "max_depth": {"type": "int_window", "deltas": [-5, 0, 5], "min": 1, "max": 50},
+                    "n_estimators": {
+                        "type": "int_window",
+                        "deltas": [-50, 0, 50],
+                        "min": 20,
+                        "max": 2000,
+                    },
+                    "max_depth": {
+                        "type": "int_window",
+                        "deltas": [-5, 0, 5],
+                        "min": 1,
+                        "max": 50,
+                    },
                     "max_features": {"type": "categorical", "values": ["sqrt", None]},
                 },
                 "GradientBoosting": {
-                    "n_estimators": {"type": "int_window", "deltas": [-50, 0, 50], "min": 20, "max": 2000},
+                    "n_estimators": {
+                        "type": "int_window",
+                        "deltas": [-50, 0, 50],
+                        "min": 20,
+                        "max": 2000,
+                    },
                     "learning_rate": {"type": "float_log", "factors": [0.5, 1.0, 2.0]},
                     "subsample": {"type": "float_window", "deltas": [-0.1, 0.0, 0.1]},
                 },
                 "XGBoost": {
-                    "n_estimators": {"type": "int_window", "deltas": [-100, 0, 100], "min": 50, "max": 5000},
+                    "n_estimators": {
+                        "type": "int_window",
+                        "deltas": [-100, 0, 100],
+                        "min": 50,
+                        "max": 5000,
+                    },
                     "learning_rate": {"type": "float_log", "factors": [0.5, 1.0, 2.0]},
-                    "max_depth": {"type": "int_window", "deltas": [-1, 0, 1], "min": 2, "max": 12},
+                    "max_depth": {
+                        "type": "int_window",
+                        "deltas": [-1, 0, 1],
+                        "min": 2,
+                        "max": 12,
+                    },
                     "subsample": {"type": "float_window", "deltas": [-0.1, 0.0, 0.1]},
-                    "colsample_bytree": {"type": "float_window", "deltas": [-0.1, 0.0, 0.1]},
+                    "colsample_bytree": {
+                        "type": "float_window",
+                        "deltas": [-0.1, 0.0, 0.1],
+                    },
                 },
                 "CatBoost": {
-                    "iterations": {"type": "int_window", "deltas": [-100, 0, 100], "min": 100, "max": 5000},
+                    "iterations": {
+                        "type": "int_window",
+                        "deltas": [-100, 0, 100],
+                        "min": 100,
+                        "max": 5000,
+                    },
                     "learning_rate": {"type": "float_log", "factors": [0.5, 1.0, 2.0]},
-                    "depth": {"type": "int_window", "deltas": [-1, 0, 1], "min": 2, "max": 12},
-                    "l2_leaf_reg": {"type": "int_window", "deltas": [-100, 0, 100], "min": 100, "max": 5000},
+                    "depth": {
+                        "type": "int_window",
+                        "deltas": [-1, 0, 1],
+                        "min": 2,
+                        "max": 12,
+                    },
+                    "l2_leaf_reg": {
+                        "type": "int_window",
+                        "deltas": [-100, 0, 100],
+                        "min": 100,
+                        "max": 5000,
+                    },
                 },
             }
 
-            needs_dense = {"KNN", "DecisionTree", "RandomForest", "AdaBoost", "GradientBoosting", "CatBoost"}
+            needs_dense = {
+                "KNN",
+                "DecisionTree",
+                "RandomForest",
+                "AdaBoost",
+                "GradientBoosting",
+                "CatBoost",
+            }
 
             def prepare_X(Xtr: Any, Xte: Any, model_name: str) -> Tuple[Any, Any]:
                 if model_name in needs_dense:

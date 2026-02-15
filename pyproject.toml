@@ -74,3 +74,7 @@ train = "student_performance.cli:train_main"
 markers = [
   "smoke: quick end-to-end smoke tests",
 ]
+
+[tool.ruff]
+extend-exclude = ["notebooks"]
+

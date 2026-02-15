@@ -52,11 +52,15 @@ class DataIngestion:
                 raise FileNotFoundError(f"Dataset not found at: {data_path}")
 
             df = pd.read_csv(data_path)
-            logging.info(f"Dataset read successfully from: {data_path} | shape={df.shape}")
+            logging.info(
+                f"Dataset read successfully from: {data_path} | shape={df.shape}"
+            )
 
             # immutable raw snapshot (don’t overwrite)
             if raw_data_path.exists():
-                logging.info(f"Raw data already exists at {raw_data_path}; not overwriting.")
+                logging.info(
+                    f"Raw data already exists at {raw_data_path}; not overwriting."
+                )
             else:
                 df.to_csv(raw_data_path, index=False)
                 logging.info(f"Raw data saved at {raw_data_path}")
@@ -71,8 +75,12 @@ class DataIngestion:
 
             train_set.to_parquet(train_data_path, index=False)
             test_set.to_parquet(test_data_path, index=False)
-            logging.info(f"Train data saved at {train_data_path} | shape={train_set.shape}")
-            logging.info(f"Test data saved at {test_data_path} | shape={test_set.shape}")
+            logging.info(
+                f"Train data saved at {train_data_path} | shape={train_set.shape}"
+            )
+            logging.info(
+                f"Test data saved at {test_data_path} | shape={test_set.shape}"
+            )
 
             meta = {
                 "timestamp": datetime.now().isoformat(timespec="seconds"),

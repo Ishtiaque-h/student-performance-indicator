@@ -34,13 +34,17 @@ def _make_refined_grid(
 
         if t == "float_log":
             factors = spec.get("factors", [0.5, 1.0, 2.0])
-            vals = sorted({float(v) * float(f) for f in factors if float(v) * float(f) > 0})
+            vals = sorted(
+                {float(v) * float(f) for f in factors if float(v) * float(f) > 0}
+            )
             if vals:
                 grid[k] = vals
 
         elif t == "float_window":
             deltas = spec.get("deltas", [-0.05, 0.0, 0.05])
-            vals = sorted({float(v) + float(d) for d in deltas if float(v) + float(d) > 0})
+            vals = sorted(
+                {float(v) + float(d) for d in deltas if float(v) + float(d) > 0}
+            )
             if vals:
                 grid[k] = vals
 

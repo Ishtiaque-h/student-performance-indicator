@@ -42,6 +42,8 @@ def download_artifacts_from_gcs(
 
         # This triggers a metadata lookup; good error message if missing.
         if not blob.exists():
-            raise FileNotFoundError(f"Missing artifact in GCS: gs://{bucket_name}/{_blob_name(prefix, fname)}")
+            raise FileNotFoundError(
+                f"Missing artifact in GCS: gs://{bucket_name}/{_blob_name(prefix, fname)}"
+            )
 
         blob.download_to_filename(dst)

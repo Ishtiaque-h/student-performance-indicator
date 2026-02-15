@@ -4,12 +4,15 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+
 def _mlflow_available() -> bool:
     try:
         import mlflow  # noqa
+
         return True
     except Exception:
         return False
+
 
 def log_training_run(
     *,
@@ -53,7 +56,12 @@ def log_training_run(
             mlflow.log_metric("test_mae", float(test["mae"]))
 
         # Log artifacts you already create
-        for fname in ["model_report.json", "preprocessor.pkl", "model.pkl", "ingestion_meta.json"]:
+        for fname in [
+            "model_report.json",
+            "preprocessor.pkl",
+            "model.pkl",
+            "ingestion_meta.json",
+        ]:
             fpath = artifacts_dir / fname
             if fpath.exists():
                 mlflow.log_artifact(str(fpath))

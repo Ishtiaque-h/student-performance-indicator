@@ -12,7 +12,9 @@ from student_performance.exception import CustomException
 from student_performance.logger import logging
 
 
-def find_project_root(start: Path | None = None, markers: Sequence[str] = ("pyproject.toml", ".git")) -> Path:
+def find_project_root(
+    start: Path | None = None, markers: Sequence[str] = ("pyproject.toml", ".git")
+) -> Path:
     """
     Find repo/project root by walking up from start until a marker is found.
     Default markers: pyproject.toml or .git

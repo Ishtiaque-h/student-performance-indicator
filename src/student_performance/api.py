@@ -15,6 +15,7 @@ from student_performance.pipeline.predict_pipeline import PredictPipeline
 
 APP_TITLE = "Student Performance Predictor"
 
+
 # ---- Pydantic request models (keep these; they're good practice) ----
 class StudentFeatures(BaseModel):
     gender: str
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
     yield
     # nothing to cleanup
 
+
 app = FastAPI(title=APP_TITLE, version="1.0", lifespan=lifespan)
 
 # ---- UI wiring (optional, but great for portfolio) ----
@@ -43,13 +45,18 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 @app.get("/health")
 def health(request: Request) -> dict:
-    loaded = hasattr(request.app.state, "pipeline") and request.app.state.pipeline is not None
+    loaded = (
+        hasattr(request.app.state, "pipeline")
+        and request.app.state.pipeline is not None
+    )
     return {"status": "ok", "pipeline_loaded": loaded}
 
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "app_title": APP_TITLE})
+    return templates.TemplateResponse(
+        "index.html", {"request": request, "app_title": APP_TITLE}
+    )
 
 
 @app.get("/schema")
@@ -74,6 +81,7 @@ def meta(request: Request) -> dict:
     pipeline: PredictPipeline = request.app.state.pipeline
 
     import os
+
     return {
         "artifacts_dir": str(pipeline.config.artifacts_dir),
         "model_path": str(pipeline.config.model_path),
@@ -86,6 +94,7 @@ def meta(request: Request) -> dict:
 
 logger = logging.getLogger("uvicorn.error")
 
+
 @app.post("/predict")
 def predict_one(payload: StudentFeatures, request: Request) -> dict:
     try:
@@ -94,8 +103,10 @@ def predict_one(payload: StudentFeatures, request: Request) -> dict:
         return {"prediction": float(pred)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception("Prediction failed")  # <-- this prints stack trace to Cloud Run logs
+    except Exception:
+        logger.exception(
+            "Prediction failed"
+        )  # <-- this prints stack trace to Cloud Run logs
         raise HTTPException(status_code=500, detail="Prediction failed")
 
 
@@ -109,6 +120,8 @@ def predict_batch(payload: List[StudentFeatures], request: Request) -> dict:
         return {"prediction": [float(x) for x in preds]}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception("Prediction failed")  # <-- this prints stack trace to Cloud Run logs
+    except Exception:
+        logger.exception(
+            "Prediction failed"
+        )  # <-- this prints stack trace to Cloud Run logs
         raise HTTPException(status_code=500, detail="Prediction failed")

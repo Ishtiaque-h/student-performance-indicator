@@ -1,10 +1,8 @@
 # tests/test_smoke.py
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
@@ -60,11 +58,8 @@ def _patch_ultra_fast_trainer(monkeypatch: pytest.MonkeyPatch) -> None:
     - Still exercises: ingestion -> transformation -> model save -> predict load
     """
     import student_performance.components.model_trainer as mt
-    from sklearn.linear_model import Ridge
     from sklearn.metrics import r2_score
     from sklearn.base import clone
-    from student_performance.utils import find_project_root, save_object
-
 
     def fast_evaluate_models(
         *,
@@ -103,7 +98,11 @@ def _patch_ultra_fast_trainer(monkeypatch: pytest.MonkeyPatch) -> None:
         report = {
             "models": {
                 name: {
-                    "random_search": {"best_params": None, "cv_best_score": None, "n_iter": 0},
+                    "random_search": {
+                        "best_params": None,
+                        "cv_best_score": None,
+                        "n_iter": 0,
+                    },
                     "grid_search": {"best_params": None, "cv_best_score": None},
                     "train": {},  # not needed for smoke
                     "test": {"r2": test_r2},
@@ -131,7 +130,9 @@ def _clear_registry_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.smoke
-def test_end_to_end_train_and_predict(fake_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_end_to_end_train_and_predict(
+    fake_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(fake_repo)
     _clear_registry_env(monkeypatch)
     _patch_ultra_fast_trainer(monkeypatch)
@@ -163,7 +164,9 @@ def test_end_to_end_train_and_predict(fake_repo: Path, monkeypatch: pytest.Monke
 
 
 @pytest.mark.smoke
-def test_prediction_schema_validation(fake_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prediction_schema_validation(
+    fake_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(fake_repo)
     _clear_registry_env(monkeypatch)
     _patch_ultra_fast_trainer(monkeypatch)

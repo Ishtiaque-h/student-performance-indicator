@@ -52,7 +52,7 @@ def download_required_artifacts(
     if not force and all((local_dir / f).exists() for f in required_files):
         return
 
-    gcs = parse_gs_uri(registry_uri) 
+    gcs = parse_gs_uri(registry_uri)
     client = storage.Client()
     bucket = client.bucket(gcs.bucket)
     print("GCS client project:", client.project)
@@ -61,7 +61,9 @@ def download_required_artifacts(
     for fname in required_files:
         blob = bucket.blob(_blob_name(gcs.prefix, fname))
         if not blob.exists(client):
-            raise FileNotFoundError(f"Missing in registry: gs://{gcs.bucket}/{_blob_name(gcs.prefix, fname)}")
+            raise FileNotFoundError(
+                f"Missing in registry: gs://{gcs.bucket}/{_blob_name(gcs.prefix, fname)}"
+            )
         blob.download_to_filename(str(local_dir / fname))
 
 

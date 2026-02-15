@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
-
+from typing import List
 
 # ----------------------------
 # Core schema / dataset config
 # ----------------------------
+
 
 @dataclass
 class DatasetConfig:
@@ -17,6 +17,7 @@ class DatasetConfig:
       - what the target column is
       - which columns are excluded from features (drop_cols)
     """
+
     data_rel_path: Path = Path("data/raw/stud.csv")
 
     target_col: str = "math_score"
@@ -24,12 +25,15 @@ class DatasetConfig:
     # Columns you want to exclude from training/prediction features.
     # (Example: if you treat reading/writing as leakage or you intentionally
     # want to predict math without them.)
-    drop_cols: List[str] = field(default_factory=lambda: ["reading_score", "writing_score"])
+    drop_cols: List[str] = field(
+        default_factory=lambda: ["reading_score", "writing_score"]
+    )
 
 
 # ----------------------------
 # Train-test split config
 # ----------------------------
+
 
 @dataclass
 class SplitConfig:
@@ -42,12 +46,14 @@ class SplitConfig:
 # Artifacts config
 # ----------------------------
 
+
 @dataclass
 class ArtifactsConfig:
     """
     All artifact outputs are anchored under repo_root/artifacts by using find_project_root().
     Your components should set artifacts_dir = repo_root / artifacts_dir_name.
     """
+
     artifacts_dir_name: str = "artifacts"
 
     raw_csv_name: str = "raw_data.csv"
@@ -88,11 +94,13 @@ class ArtifactsConfig:
 # Training / tuning config
 # ----------------------------
 
+
 @dataclass
 class TuningConfig:
     """
     Tuning knobs used by evaluate_models (RandomizedSearch -> refined GridSearch).
     """
+
     scoring: str = "r2"
     cv: int = 5
     n_jobs: int = -1
@@ -109,6 +117,7 @@ class DenseSafetyConfig:
     """
     Safety limits when densifying sparse matrices for models that require dense.
     """
+
     dense_feature_threshold: int = 5000
     dense_cell_threshold: int = 5_000_000  # rows * features
 
@@ -116,6 +125,7 @@ class DenseSafetyConfig:
 # ----------------------------
 # Full pipeline config bundle
 # ----------------------------
+
 
 @dataclass
 class PipelineConfig:

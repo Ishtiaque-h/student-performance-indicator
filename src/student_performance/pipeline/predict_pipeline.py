@@ -14,6 +14,7 @@ from student_performance.utils import find_project_root, load_object
 from student_performance.components.config import CONFIG
 from student_performance.artifacts_gcs import download_artifacts_from_gcs
 
+
 def _env_flag(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
 
@@ -35,7 +36,11 @@ class PredictPipeline:
         self._loaded_from_uri: str | None = None
 
         default_artifacts_dir = CONFIG.artifacts.artifacts_dir(root)
-        artifacts_dir = Path(os.getenv("ARTIFACTS_DIR", str(default_artifacts_dir))).expanduser().resolve()
+        artifacts_dir = (
+            Path(os.getenv("ARTIFACTS_DIR", str(default_artifacts_dir)))
+            .expanduser()
+            .resolve()
+        )
 
         self.config = PredictPipelineConfig(
             artifacts_dir=artifacts_dir,
@@ -52,52 +57,54 @@ class PredictPipeline:
     def _ensure_artifacts(self) -> None:
         force = _env_flag("FORCE_MODEL_DOWNLOAD", "0")
 
+        # Only the files required for serving
+        required = [
+            CONFIG.artifacts.preprocessor_name,
+            CONFIG.artifacts.model_name,
+        ]
+
+        local_ok = all((self.config.artifacts_dir / f).exists() for f in required)
+
+        # If artifacts exist locally and we are not forcing a download, do nothing.
+        if local_ok and not force:
+            return
+
+        # Resolve GCS URI (new preferred var first, then legacy fallback)
         gcs_uri = (
             os.getenv("GCS_ARTIFACTS_URI", "").strip()
-            or os.getenv("MODEL_REGISTRY_URI", "").strip()  # legacy fallback
+            or os.getenv("MODEL_REGISTRY_URI", "").strip()
         )
+
+        # If no GCS URI is provided:
+        # - If local artifacts exist, fall back to local (keeps tests/dev working)
+        # - If local artifacts don't exist, error
         if not gcs_uri:
+            if local_ok:
+                logging.warning(
+                    "FORCE_MODEL_DOWNLOAD is set but no GCS URI provided; using local artifacts."
+                )
+                return
             raise FileNotFoundError(
                 f"Artifacts not found locally in {self.config.artifacts_dir} and GCS_ARTIFACTS_URI is not set."
             )
 
-        # If we already loaded from a different URI in this process, re-download
-        uri_changed = self._loaded_from_uri is not None and self._loaded_from_uri != gcs_uri
-
-        # If artifacts exist and we are not forcing and URI didn't change, we're done
-        if (not force) and (not uri_changed) and self.config.preprocessor_path.exists() and self.config.model_path.exists():
-            return
-
         self.config.artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         logging.info(
-            f"Downloading artifacts from {gcs_uri} -> {self.config.artifacts_dir} "
-            f"(force={force}, uri_changed={uri_changed})"
+            f"Downloading required artifacts from {gcs_uri} -> {self.config.artifacts_dir} (force={force})"
         )
-
-        # If we are going to re-download, drop in-memory cache
-        self._preprocessor = None
-        self._model = None
 
         download_artifacts_from_gcs(
             gcs_uri=gcs_uri,
             local_dir=self.config.artifacts_dir,
-            filenames=[
-                CONFIG.artifacts.preprocessor_name,
-                CONFIG.artifacts.model_name,
-                # include these only if you want them locally too
-                "model_report.json",
-                "ingestion_meta.json",
-            ],
+            filenames=required,
         )
 
-        if not (self.config.preprocessor_path.exists() and self.config.model_path.exists()):
+        missing = [f for f in required if not (self.config.artifacts_dir / f).exists()]
+        if missing:
             raise FileNotFoundError(
-                f"Downloaded from {gcs_uri} but expected files not found: "
-                f"{self.config.preprocessor_path.name}, {self.config.model_path.name}"
+                f"Downloaded from {gcs_uri} but missing required files: {missing}"
             )
-
-        self._loaded_from_uri = gcs_uri
 
     def _load_artifacts(self) -> Tuple[Any, Any]:
         # Fast path: already loaded in memory
@@ -115,7 +122,9 @@ class PredictPipeline:
             self._model = load_object(str(self.config.model_path))
             return self._preprocessor, self._model
 
-    def _to_dataframe(self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]) -> pd.DataFrame:
+    def _to_dataframe(
+        self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]
+    ) -> pd.DataFrame:
         if isinstance(X, pd.DataFrame):
             return X.copy()
         if isinstance(X, dict):
@@ -124,7 +133,9 @@ class PredictPipeline:
             return pd.DataFrame(X)
         raise TypeError("X must be a pandas DataFrame, a dict, or a list of dicts.")
 
-    def _align_to_training_schema(self, df: pd.DataFrame, preprocessor: Any) -> pd.DataFrame:
+    def _align_to_training_schema(
+        self, df: pd.DataFrame, preprocessor: Any
+    ) -> pd.DataFrame:
         required = getattr(preprocessor, "feature_names_in_", None)
         if required is None:
             return df
@@ -136,7 +147,9 @@ class PredictPipeline:
 
         return df.reindex(columns=required_cols)
 
-    def predict(self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]) -> np.ndarray:
+    def predict(
+        self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]
+    ) -> np.ndarray:
         logging.info("Prediction started")
         try:
             preprocessor, model = self._load_artifacts()

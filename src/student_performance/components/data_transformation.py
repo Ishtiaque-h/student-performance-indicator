@@ -27,23 +27,31 @@ class DataTransformation:
 
     def get_data_transformer_object(self, X: pd.DataFrame) -> ColumnTransformer:
         try:
-            num_features = X.select_dtypes(exclude=["object", "category", "string"]).columns.to_list()
-            cat_features = X.select_dtypes(include=["object", "category", "string"]).columns.to_list()
+            num_features = X.select_dtypes(
+                exclude=["object", "category", "string"]
+            ).columns.to_list()
+            cat_features = X.select_dtypes(
+                include=["object", "category", "string"]
+            ).columns.to_list()
 
             transformers = []
 
             if cat_features:
-                cat_pipeline = Pipeline(steps=[
-                    ("imputer", SimpleImputer(strategy="most_frequent")),
-                    ("onehot", OneHotEncoder(handle_unknown="ignore")),
-                ])
+                cat_pipeline = Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="most_frequent")),
+                        ("onehot", OneHotEncoder(handle_unknown="ignore")),
+                    ]
+                )
                 transformers.append(("categorical", cat_pipeline, cat_features))
 
             if num_features:
-                num_pipeline = Pipeline(steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                ])
+                num_pipeline = Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        ("scaler", StandardScaler()),
+                    ]
+                )
                 transformers.append(("numeric", num_pipeline, num_features))
 
             if not transformers:
@@ -64,11 +72,15 @@ class DataTransformation:
         try:
             train_df = pd.read_parquet(train_path)
             test_df = pd.read_parquet(test_path)
-            logging.info(f"Read train/test completed | train={train_df.shape}, test={test_df.shape}")
+            logging.info(
+                f"Read train/test completed | train={train_df.shape}, test={test_df.shape}"
+            )
 
             target = CONFIG.dataset.target_col
             if target not in train_df.columns or target not in test_df.columns:
-                raise KeyError(f"Target column '{target}' not found in train/test data.")
+                raise KeyError(
+                    f"Target column '{target}' not found in train/test data."
+                )
 
             drop_cols = CONFIG.dataset.drop_cols or []
             cols_to_drop = [c for c in drop_cols if c in train_df.columns]
@@ -102,8 +114,10 @@ class DataTransformation:
 
             logging.info("Data transformation completed")
             return (
-                X_train_arr, y_train.to_numpy(),
-                X_test_arr, y_test.to_numpy(),
+                X_train_arr,
+                y_train.to_numpy(),
+                X_test_arr,
+                y_test.to_numpy(),
                 str(preprocessor_path),
             )
 
