@@ -1,4 +1,4 @@
-name: Deploy to Cloud Run
+name: Deploy to Cloud Run (staging)
 
 on:
   push:
@@ -8,60 +8,53 @@ on:
 permissions:
   contents: read
   id-token: write
- 
+
 jobs:
   deploy:
     environment: staging
     runs-on: ubuntu-latest
     env:
-      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }} # e.g., student-performance-indicator
-      REGION: ${{ vars.GCP_REGION }} # e.g., us-central1
-      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }} # e.g., student-performance-api-staging
-      ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }} # e.g., student-performance
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - id: auth
+      - name: Auth to GCP (WIF)
         uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-      # Auth action docs. :contentReference[oaicite:1]{index=1}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
-      # setup-gcloud docs. :contentReference[oaicite:2]{index=2}
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       - name: Build & Push image
+        shell: bash
         run: |
-          IMAGE_URI="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE }}:${{ github.sha }}"
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          set -euo pipefail
+          IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/${SERVICE}:${GITHUB_SHA}"
+          echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
           docker build -t "$IMAGE_URI" .
           docker push "$IMAGE_URI"
+          echo "Deploying image: $IMAGE_URI"
 
-      - name: Confirm image being deployed
-        run: |
-          echo "Deploying image: ${IMAGE_URI}"
-          
-      - name: Show deploy target
-        run: |
-          echo "ENVIRONMENT=${{ job.environment.name }}"  # staging or production
-          echo "PROJECT_ID=${{ env.PROJECT_ID }}"
-          echo "REGION=${{ env.REGION }}"
-          echo "SERVICE=${{ env.SERVICE }}"
-
-      - id: deploy
-        uses: google-github-actions/deploy-cloudrun@v2
+      - name: Deploy to Cloud Run (image update only)
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
+          project_id: ${{ env.PROJECT_ID }}
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.IMAGE_URI }}
-      # deploy-cloudrun docs. :contentReference[oaicite:3]{index=3}
+          suffix: ${{ github.sha }}
 
       - name: Output URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
