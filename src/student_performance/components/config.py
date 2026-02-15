@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 # ----------------------------
 # Core schema / dataset config
@@ -16,6 +16,7 @@ class DatasetConfig:
       - where raw data lives
       - what the target column is
       - which columns are excluded from features (drop_cols)
+      - Schema mapping (API -> Model)
     """
 
     data_rel_path: Path = Path("data/raw/stud.csv")
@@ -23,10 +24,18 @@ class DatasetConfig:
     target_col: str = "math_score"
 
     # Columns you want to exclude from training/prediction features.
-    # (Example: if you treat reading/writing as leakage or you intentionally
-    # want to predict math without them.)
     drop_cols: List[str] = field(
         default_factory=lambda: ["reading_score", "writing_score"]
+    )
+
+    # NEW: Map API fields (snake_case) to Model features (dataset headers)
+    schema_map: Dict[str, str] = field(
+        default_factory=lambda: {
+            "race_ethnicity": "race/ethnicity",
+            "parental_level_of_education": "parental level of education",
+            "test_preparation_course": "test preparation course",
+            # Add others if needed, e.g. "math_score": "math score"
+        }
     )
 
 
