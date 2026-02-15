@@ -74,6 +74,7 @@ jobs:
 
       # 2. Deploy with the specific RUN_URI
       - name: Deploy to Cloud Run
+        id: deploy
         uses: google-github-actions/deploy-cloudrun@v3
         with:
           project_id: ${{ env.PROJECT_ID }}
