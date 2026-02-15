@@ -25,10 +25,10 @@ env:
 
 jobs:
   retrain:
-    environment: production
+    environment: staging
     runs-on: ubuntu-latest
     env:
-        SERVICE: ${{ vars.CLOUD_RUN_SERVICE }} # e.g., student-performance-api (production)
+        SERVICE: ${{ vars.CLOUD_RUN_SERVICE }} # e.g., student-performance-api-staging (staging)
 
     steps:
       - uses: actions/checkout@v4
@@ -56,16 +56,28 @@ jobs:
         run: |
           mkdir -p "$MLFLOW_DIR" "$ARTIFACTS_DIR"
 
-      - name: Train + publish artifacts
+      - name: Train + publish artifacts (run index only)
         id: publish
+        shell: bash
         run: |
-          python scripts/train_and_publish.py --registry-uri "${MODEL_REGISTRY_URI}" --also-latest | tee publish.out
-          RUN_ID=$(grep '^RUN_ID=' publish.out | cut -d= -f2)
-          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          set -euo pipefail
+
+          python scripts/train_and_publish.py \
+            --registry-uri "${MODEL_REGISTRY_URI}" \
+            --index-latest | tee publish.out
+
+          RUN_ID="$(grep '^RUN_ID=' publish.out | cut -d= -f2)"
+          RUN_URI="$(grep '^RUN_URI=' publish.out | cut -d= -f2)"
+
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "RUN_URI=$RUN_URI" >> "$GITHUB_ENV"
+
+          echo "RUN_ID=$RUN_ID"
+          echo "RUN_URI=$RUN_URI"
 
       - name: Sync mlruns to GCS
         run: |
-          gcloud storage rsync -r "${{ env.MLFLOW_DIR }}" "${{ env.MLFLOW_GCS_URI }}"
+          gcloud storage rsync -r "${MLFLOW_DIR}" "${MLFLOW_GCS_URI}/${RUN_ID}"
 
       - name: Gate and promote model
         shell: bash
@@ -87,16 +99,17 @@ jobs:
           if val < thr:
               raise SystemExit("Not promoting: metric below threshold.")
           PY
-
-          # 3) Upload to GCS (new version)
-          MODEL_VERSION="run-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
-          GCS_DEST="${MODEL_REGISTRY_URI}/${MODEL_VERSION}"
-          gcloud storage rsync -r "artifacts" "${GCS_DEST}"
           
-          # 4) Point Cloud Run to the new model (do NOT overwrite other env vars)
+      - name: Rollout to STAGING (recommended)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Deploying candidate model to staging: $RUN_URI"
           echo "Updating Cloud Run service: ${SERVICE} in ${PROJECT_ID}/${REGION}"
           gcloud run services update "${SERVICE}" \
             --region "${REGION}" \
             --project "${PROJECT_ID}" \
-            --update-env-vars "MODEL_REGISTRY_URI=${GCS_DEST},ARTIFACTS_DIR=${ARTIFACTS_DIR},FORCE_MODEL_DOWNLOAD=1"
+            --update-env-vars "GCS_ARTIFACTS_URI=${RUN_URI},ARTIFACTS_DIR=${ARTIFACTS_DIR},FORCE_MODEL_DOWNLOAD=1"
+
+
 
