@@ -154,13 +154,7 @@ class PredictPipeline:
         try:
             preprocessor, model = self._load_artifacts()
             df = self._to_dataframe(X)
-
-            # Map Pydantic (snake_case) -> Dataset (standard headers)
-            # Adjust the values on the right if your CSV headers are different
-            if CONFIG.dataset.schema_map:
-                df = df.rename(columns=CONFIG.dataset.schema_map)
-                logging.info(f"Renamed columns using schema_map: {list(df.columns)}")
-
+            
             # Drop target if accidentally included
             target = CONFIG.dataset.target_col
             if target in df.columns:
