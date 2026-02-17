@@ -162,7 +162,7 @@ class PredictPipeline:
         try:
             preprocessor, model = self._load_artifacts()
             df = self._to_dataframe(X)
-            
+
             # Drop target if accidentally included
             target = CONFIG.dataset.target_col
             if target in df.columns:
