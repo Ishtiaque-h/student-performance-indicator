@@ -189,5 +189,5 @@ class PredictPipeline:
             raise           # Re-raise the ValueError directly
 
         except Exception as e:
-            logging.exception(f"Prediction failed")
+            logging.exception("Prediction failed")
             raise CustomException(e, sys)
