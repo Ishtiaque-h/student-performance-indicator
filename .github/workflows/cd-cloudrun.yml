@@ -113,7 +113,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"   # v*
           ARTIFACTS_URI="${MODEL_REGISTRY_URI}/${TAG}"
           
-          echo "Deploying with ARTIFACTS_URI=${ARTIFACTS_URI}"  # Add this debug line
+          echo "Deploying with ARTIFACTS_URI=${ARTIFACTS_URI}"
 
           # Fail fast: do not deploy if release artifacts aren't present exactly where serving expects
           gcloud storage ls "${ARTIFACTS_URI}/model.pkl" >/dev/null
@@ -122,21 +122,27 @@ jobs:
           # Build env vars string - make sure ARTIFACTS_URI is expanded
           ENV_VARS="ARTIFACTS_DIR=/tmp/artifacts,GCS_ARTIFACTS_URI=${ARTIFACTS_URI},FORCE_MODEL_DOWNLOAD=1"
           
-          echo "Setting environment variables: ${ENV_VARS}"  # Add this debug line
+          echo "Setting environment variables: ${ENV_VARS}"
+
+          # Get the image digest to force new revision
+          IMAGE_DIGEST=$(gcloud artifacts docker images describe "${IMAGE_URI}" \
+            --format='value(image_summary.digest)')
+          IMAGE_WITH_DIGEST="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/${SERVICE}@${IMAGE_DIGEST}"
+
+          echo "Deploying image with digest: ${IMAGE_WITH_DIGEST}"
 
           gcloud run deploy "${SERVICE}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
-            --image "${IMAGE_URI}" \
+            --image "${IMAGE_WITH_DIGEST}" \
             --port 8080 \
             --allow-unauthenticated \
             --service-account sp-api-sa@freshmoon.iam.gserviceaccount.com \
             --update-env-vars "${ENV_VARS}"
-
-      - name: Post-deploy smoke
-        shell: bash
-        run: |
-          set -euo pipefail
+            - name: Post-deploy smoke
+              shell: bash
+              run: |
+                set -euo pipefail
 
           SERVICE_URL="$(gcloud run services describe "${SERVICE}" \
             --project "${PROJECT_ID}" \
