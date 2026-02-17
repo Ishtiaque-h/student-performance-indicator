@@ -119,7 +119,7 @@ jobs:
           gcloud storage ls "${ARTIFACTS_URI}/model.pkl" >/dev/null
           gcloud storage ls "${ARTIFACTS_URI}/preprocessor.pkl" >/dev/null
 
-          # Build env vars string - make sure ARTIFACTS_URI is expanded
+          # Build env vars string
           ENV_VARS="ARTIFACTS_DIR=/tmp/artifacts,GCS_ARTIFACTS_URI=${ARTIFACTS_URI},FORCE_MODEL_DOWNLOAD=1"
           
           echo "Setting environment variables: ${ENV_VARS}"
@@ -131,6 +131,11 @@ jobs:
 
           echo "Deploying image with digest: ${IMAGE_WITH_DIGEST}"
 
+          # Create unique revision suffix from tag
+          REVISION_SUFFIX=$(echo "${TAG}" | sed 's/[^a-z0-9-]/-/g' | sed 's/^-*//' | sed 's/-*$//' | cut -c1-20)
+          
+          echo "Using revision suffix: ${REVISION_SUFFIX}"
+
           gcloud run deploy "${SERVICE}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
@@ -138,11 +143,13 @@ jobs:
             --port 8080 \
             --allow-unauthenticated \
             --service-account sp-api-sa@freshmoon.iam.gserviceaccount.com \
-            --update-env-vars "${ENV_VARS}"
-            - name: Post-deploy smoke
-              shell: bash
-              run: |
-                set -euo pipefail
+            --revision-suffix "${REVISION_SUFFIX}" \
+            --set-env-vars "${ENV_VARS}"
+            
+      - name: Post-deploy smoke
+        shell: bash
+        run: |
+          set -euo pipefail
 
           SERVICE_URL="$(gcloud run services describe "${SERVICE}" \
             --project "${PROJECT_ID}" \
@@ -151,9 +158,10 @@ jobs:
 
           echo "Service URL: ${SERVICE_URL}"
 
-          curl -sS "${SERVICE_URL}/health" | tee /tmp/health.json
-          curl -sS "${SERVICE_URL}/schema" | tee /tmp/schema.json || true
+          # ---- Health must be 200 ----
+          curl -fsS "${SERVICE_URL}/health" | tee /tmp/health.json
 
+          # ---- Happy-path predict must be 200 and contain prediction ----
           HTTP_CODE="$(curl -sS -o /tmp/predict.json -w "%{http_code}" \
             -X POST "${SERVICE_URL}/predict" \
             -H "Content-Type: application/json" \
@@ -165,13 +173,35 @@ jobs:
               "test_preparation_course":"none"
             }')"
 
+          echo "predict status: ${HTTP_CODE}"
           cat /tmp/predict.json
-          test "$HTTP_CODE" -eq 200
 
-          # Add more context before failing
-          if [ "$HTTP_CODE" -ne 200 ]; then
-            echo "Prediction failed with status $HTTP_CODE"
-            cat /tmp/predict.json | jq . || cat /tmp/predict.json
+          if [ "${HTTP_CODE}" -ne 200 ]; then
+            echo "ERROR: /predict did not return 200"
             exit 1
           fi
 
+          python - <<'PY'
+          import json
+          obj = json.load(open("/tmp/predict.json"))
+          assert "prediction" in obj, obj
+          PY
+
+          # ---- Negative schema check should return 422 (or 400 depending on your design) ----
+          BAD_CODE="$(curl -sS -o /tmp/bad.json -w "%{http_code}" \
+            -X POST "${SERVICE_URL}/predict" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "gender":"female",
+              "race_ethnicity":"group B",
+              "parental_level_of_education":"bachelor'\''s degree",
+              "test_preparation_course":"none"
+            }')"
+
+          echo "bad predict status: ${BAD_CODE}"
+          cat /tmp/bad.json
+
+          if [ "${BAD_CODE}" -ne 422 ] && [ "${BAD_CODE}" -ne 400 ]; then
+            echo "ERROR: expected 422/400 for schema failure"
+            exit 1
+          fi
