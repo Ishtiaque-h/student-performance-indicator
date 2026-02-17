@@ -102,16 +102,16 @@ def predict_one(payload: StudentFeatures, request: Request) -> dict:
         pipeline: PredictPipeline = request.app.state.pipeline
         pred = pipeline.predict(payload.model_dump())[0]
         return {"prediction": float(pred)}
-    
+
     except ValueError as e:
         logger.error(f"Validation error: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
-    
+
     except CustomException:
         # Server error - system issue
         logging.exception("Prediction failed")
         raise HTTPException(status_code=500, detail="Prediction failed")
-    
+
     except Exception as e:
         logger.exception(
             f"Prediction failed with error: {type(e).__name__}: {str(e)}"
@@ -127,11 +127,11 @@ def predict_batch(payload: List[StudentFeatures], request: Request) -> dict:
         preds = pipeline.predict(rows)
         preds = np.asarray(preds).ravel()
         return {"prediction": [float(x) for x in preds]}
-    
+
     except ValueError as e:
         logger.error(f"Validation error: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
-    
+
     except CustomException:
         # Server error - system issue
         logging.exception("Prediction failed")
