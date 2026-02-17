@@ -13,59 +13,58 @@ name = "student-performance"
 version = "0.1.0"
 description = "Student performance prediction with MLOps pipeline"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.13"
 license = { file = "LICENSE" }
 
-# Runtime deps needed to run training + inference + API
+# Runtime deps needed to run training + inference
 dependencies = [
-  "numpy",
-  "pandas",
-  "scikit-learn",
-  "pyarrow",
-  "dill",
-  "jinja2",
-  "google-cloud-storage",
+  "numpy>=1.24,<2.0",
+  "pandas>=2.0,<3.0",
+  "scikit-learn>=1.3,<2.0",
+  "pyarrow>=14.0",
+  "dill>=0.3.7",
+  "jinja2>=3.1",
+  "google-cloud-storage>=2.10",
 ]
 
 [project.optional-dependencies]
 
 # API runtime
 api = [
-  "fastapi>=0.110.0",
-  "uvicorn[standard]>=0.27.0",
-  "pydantic>=2.0.0",
+  "fastapi>=0.110.0,<1.0",
+  "uvicorn[standard]>=0.27.0,<1.0",
+  "pydantic>=2.0.0,<3.0",
 ]
 
 # Heavy/optional ML models (only install if you need them)
 ml = [
-  "xgboost",
-  "catboost",
+  "xgboost>=2.0,<3.0",
+  "catboost>=1.2,<2.0",
 ]
 
+# MLOps tooling
 mlops = [
-  "mlflow>=2.9",
+  "mlflow>=2.9,<3.0",
 ]
 
 # Developer tooling
 dev = [
-  "pytest",
-  "black",
-  "ruff",
-  "matplotlib",
-  "seaborn>=0.13.2",
+  "pytest>=7.4,<9.0",
+  "black>=23.0,<25.0",
+  "ruff>=0.1,<1.0",
+  "matplotlib>=3.7,<4.0",
+  "seaborn>=0.13.2,<1.0",
 ]
 
-# For local API serving (dev/prod). gunicorn is mainly for Linux containers.
-deploy = [
-  #"uvicorn[standard]>=0.27",
-  "gunicorn>=21.2",
+# Convenience: everything for full local development
+all = [
+  "student-performance[api,ml,mlops,dev]",
 ]
 
 [tool.setuptools.package-data]
 student_performance = ["templates/*.html", "static/*.js"]
 
 [project.scripts]
-# Convenience commands (optional but nice)
 train = "student_performance.cli:train_main"
 # For uvicorn we usually run via CLI, but we can also keep a script
 # serve = "student_performance.api:main"
@@ -77,4 +76,3 @@ markers = [
 
 [tool.ruff]
 extend-exclude = ["notebooks"]
-
