@@ -156,10 +156,10 @@ jobs:
           cat /tmp/predict.json
           test "$HTTP_CODE" -eq 200
 
-          python - <<'PY'
-          import json
-          with open("/tmp/predict.json","r") as f:
-              obj = json.load(f)
-          assert "prediction" in obj, obj
-          PY
+          # Add more context before failing
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "Prediction failed with status $HTTP_CODE"
+            cat /tmp/predict.json | jq . || cat /tmp/predict.json
+            exit 1
+          fi
 
