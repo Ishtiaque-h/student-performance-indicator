@@ -25,7 +25,7 @@ jobs:
       - name: Install (for tests)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,api,ml]"   # add api so smoke tests can import API code safely
+          pip install -e ".[api]"   # add api so smoke tests can import API code safely
 
       - name: Run smoke tests
         run: pytest -m smoke -q
@@ -64,7 +64,7 @@ jobs:
       - name: Install (train + publish deps)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[api,ml,mlops]"
+          pip install -e ".[all]"  # includes api, dev, ml, mlops deps; remove extras you don't need for faster installs
 
       - name: Train + publish artifacts for this release tag
         shell: bash
@@ -92,7 +92,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"  # e.g. v0.2.0
           IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/${SERVICE}:${TAG}"
           echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
-          docker build -t "${IMAGE_URI}" .
+          docker build --no-cache -t "${IMAGE_URI}" .
           docker push "${IMAGE_URI}"
 
       - name: Show deploy target

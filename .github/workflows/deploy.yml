@@ -42,7 +42,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[api,ml,mlops]"
+          pip install -e ".[all]"  # install all extras for deployment; adjust as needed for faster installs
 
       # 1. Train and Publish to get a valid URI for this specific code version
       - name: Train & Publish (Staging)
