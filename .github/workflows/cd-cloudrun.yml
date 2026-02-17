@@ -143,8 +143,18 @@ jobs:
             --port 8080 \
             --allow-unauthenticated \
             --service-account sp-api-sa@freshmoon.iam.gserviceaccount.com \
-            --revision-suffix "${REVISION_SUFFIX}" \
+            # --revision-suffix "${REVISION_SUFFIX}" \
             --set-env-vars "${ENV_VARS}"
+            --no-traffic  # ← ADD THIS: Don't route traffic yet
+
+          # Route 100% traffic to the latest revision
+          echo "Routing traffic to latest revision..."
+          gcloud run services update-traffic "${SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --to-latest
+          
+          echo "Traffic routing complete"
             
       - name: Post-deploy smoke
         shell: bash
