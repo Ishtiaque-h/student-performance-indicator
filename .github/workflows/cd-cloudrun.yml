@@ -112,12 +112,17 @@ jobs:
 
           TAG="${GITHUB_REF_NAME}"   # v*
           ARTIFACTS_URI="${MODEL_REGISTRY_URI}/${TAG}"
+          
+          echo "Deploying with ARTIFACTS_URI=${ARTIFACTS_URI}"  # Add this debug line
 
           # Fail fast: do not deploy if release artifacts aren't present exactly where serving expects
           gcloud storage ls "${ARTIFACTS_URI}/model.pkl" >/dev/null
           gcloud storage ls "${ARTIFACTS_URI}/preprocessor.pkl" >/dev/null
 
+          # Build env vars string - make sure ARTIFACTS_URI is expanded
           ENV_VARS="ARTIFACTS_DIR=/tmp/artifacts,GCS_ARTIFACTS_URI=${ARTIFACTS_URI},FORCE_MODEL_DOWNLOAD=1"
+          
+          echo "Setting environment variables: ${ENV_VARS}"  # Add this debug line
 
           gcloud run deploy "${SERVICE}" \
             --project "${PROJECT_ID}" \
@@ -125,6 +130,7 @@ jobs:
             --image "${IMAGE_URI}" \
             --port 8080 \
             --allow-unauthenticated \
+            --service-account sp-api-sa@freshmoon.iam.gserviceaccount.com \
             --update-env-vars "${ENV_VARS}"
 
       - name: Post-deploy smoke
