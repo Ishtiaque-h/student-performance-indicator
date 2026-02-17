@@ -186,8 +186,8 @@ class PredictPipeline:
         except ValueError as e:
             # user-input/schema error: keep it as ValueError
             logging.exception(f"Bad prediction input: {e}")
-            raise CustomException(e, sys)
+            raise           # Re-raise the ValueError directly
 
         except Exception as e:
-            logging.exception("Prediction failed")
-            raise CustomException(e, sys)
+            logging.exception(f"Prediction failed: {e}")
+            raise
