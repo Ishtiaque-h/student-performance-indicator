@@ -61,6 +61,8 @@ class PredictPipeline:
         required = [
             CONFIG.artifacts.preprocessor_name,
             CONFIG.artifacts.model_name,
+            "model_report.json",
+            "ingestion_meta.json",
         ]
 
         local_ok = all((self.config.artifacts_dir / f).exists() for f in required)
@@ -93,6 +95,12 @@ class PredictPipeline:
         logging.info(
             f"Downloading required artifacts from {gcs_uri} -> {self.config.artifacts_dir} (force={force})"
         )
+
+        if force:
+            for f in required:
+                p = self.config.artifacts_dir / f
+                if p.exists():
+                    p.unlink()
 
         download_artifacts_from_gcs(
             gcs_uri=gcs_uri,
