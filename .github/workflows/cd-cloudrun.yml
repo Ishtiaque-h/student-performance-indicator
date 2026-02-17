@@ -144,8 +144,8 @@ jobs:
             --allow-unauthenticated \
             --service-account sp-api-sa@freshmoon.iam.gserviceaccount.com \
             --revision-suffix "${REVISION_SUFFIX}" \
-            --set-env-vars "${ENV_VARS}"
-            --no-traffic  # ← ADD THIS: Don't route traffic yet
+            --set-env-vars "${ENV_VARS}" \
+            --no-traffic  # Deploy without traffic, we'll shift traffic in the next step
 
           # Route 100% traffic to the latest revision
           echo "Routing traffic to latest revision..."
