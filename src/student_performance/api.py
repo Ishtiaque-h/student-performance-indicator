@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from student_performance.exception import CustomException
 from student_performance.pipeline.predict_pipeline import PredictPipeline
 
 APP_TITLE = "Student Performance Predictor"
@@ -102,10 +103,15 @@ def predict_one(payload: StudentFeatures, request: Request) -> dict:
         pred = pipeline.predict(payload.model_dump())[0]
         return {"prediction": float(pred)}
     except ValueError as e:
+        logger.error(f"Validation error: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
+    except CustomException as e:
+        # Server error - system issue
+        logging.exception("Prediction failed")
+        raise HTTPException(status_code=500, detail="Prediction failed")
     except Exception:
         logger.exception(
-            "Prediction failed"
+            f"Prediction failed with error: {type(e).__name__}: {str(e)}"
         )  # <-- this prints stack trace to Cloud Run logs
         raise HTTPException(status_code=500, detail="Prediction failed")
 
@@ -119,9 +125,10 @@ def predict_batch(payload: List[StudentFeatures], request: Request) -> dict:
         preds = np.asarray(preds).ravel()
         return {"prediction": [float(x) for x in preds]}
     except ValueError as e:
+        logger.error(f"Validation error: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         logger.exception(
-            "Prediction failed"
+            f"Prediction failed with error: {type(e).__name__}: {str(e)}"
         )  # <-- this prints stack trace to Cloud Run logs
         raise HTTPException(status_code=500, detail="Prediction failed")
