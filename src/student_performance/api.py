@@ -2,14 +2,14 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Optional, Any, Dict, List
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from student_performance.exception import CustomException
 from student_performance.pipeline.predict_pipeline import PredictPipeline
@@ -17,13 +17,32 @@ from student_performance.pipeline.predict_pipeline import PredictPipeline
 APP_TITLE = "Student Performance Predictor"
 
 
-# ---- Pydantic request models (keep these; they're good practice) ----
+# ---- Pydantic request models ----
 class StudentFeatures(BaseModel):
-    gender: str
-    race_ethnicity: str
-    parental_level_of_education: str
-    lunch: str
-    test_preparation_course: str
+    """
+    Generic prediction request model.
+    Validates against categories learned during training.
+    Works with ANY dataset - no hard-coded values!
+    """
+    # Define fields as generic strings (no Literal types)
+    model_config = {"extra": "forbid"}  # Reject unexpected fields
+    
+    # Dynamic fields - populated based on preprocessor
+    # These will be validated against the trained categories
+    
+    @model_validator(mode='before')
+    @classmethod
+    def normalize_and_validate(cls, data: Any) -> Any:
+        """
+        1. Normalize inputs (strip whitespace, lowercase)
+        2. Will be validated against preprocessor categories later
+        """
+        if isinstance(data, dict):
+            return {
+                key: value.strip().lower() if isinstance(value, str) else value
+                for key, value in data.items()
+            }
+        return data
 
 
 # ---- Lifespan (preferred over on_event startup) ----
@@ -38,12 +57,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=APP_TITLE, version="1.0", lifespan=lifespan)
 
-# ---- UI wiring (optional, but great for portfolio) ----
+# ---- UI wiring ----
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
-
+# ---- API endpoints ----
 @app.get("/health")
 def health(request: Request) -> dict:
     loaded = (
@@ -92,53 +111,152 @@ def meta(request: Request) -> dict:
         "FORCE_MODEL_DOWNLOAD": os.getenv("FORCE_MODEL_DOWNLOAD"),
     }
 
-
 logger = logging.getLogger("uvicorn.error")
 
 
 @app.post("/predict")
-def predict_one(payload: StudentFeatures, request: Request) -> dict:
+def predict_one(payload: Dict[str, Any], request: Request) -> dict:
+    """
+    Predict single instance with dynamic validation.
+    Validations:
+    - Required fields are present (based on preprocessor)
+    - No extra fields (forbids typos)
+    - String values are normalized (strip whitespace, lowercase)
+    - Categorical values are validated against preprocessor categories (case-insensitive)
+    - Empty values are not allowed (after normalization)
+    """
     try:
         pipeline: PredictPipeline = request.app.state.pipeline
-        pred = pipeline.predict(payload.model_dump())[0]
+        preprocessor, model = pipeline._load_artifacts()
+        
+        # Get expected features from preprocessor
+        expected_features = list(preprocessor.feature_names_in_)
+        
+        # Validate: check all required fields are present
+        missing = [f for f in expected_features if f not in payload]
+        if missing:
+            raise ValueError(f"Missing required fields: {missing}")
+        
+        # Validate: check no extra fields
+        extra = [f for f in payload.keys() if f not in expected_features]
+        if extra:
+            raise ValueError(f"Unexpected fields: {extra}")
+        
+        # Normalize string values
+        normalized_payload = {
+            key: value.strip().lower() if isinstance(value, str) and value.strip() else value
+            for key, value in payload.items()
+        }
+        
+        # Check for empty values
+        empty = [k for k, v in normalized_payload.items() if v == "" or v is None]
+        if empty:
+            raise ValueError(f"Empty values not allowed for fields: {empty}")
+        
+        # Validate categories against preprocessor (if categorical)
+        if hasattr(preprocessor, 'transformers_'):
+            for transformer_name, transformer, feature_cols in preprocessor.transformers_:
+                if transformer_name == "categorical" and hasattr(transformer.named_steps['onehot'], 'categories_'):
+                    ohe = transformer.named_steps['onehot']
+                    categories = ohe.categories_
+                    
+                    for i, col in enumerate(feature_cols):
+                        if col in normalized_payload:
+                            valid_cats = [str(c).lower() for c in categories[i]]
+                            user_value = str(normalized_payload[col]).lower()
+                            
+                            if user_value not in valid_cats:
+                                raise ValueError(
+                                    f"Invalid value '{payload[col]}' for field '{col}'. "
+                                    f"Expected one of: {', '.join(sorted(set(str(c) for c in categories[i])))}"
+                                )
+        
+        # Make prediction
+        pred = pipeline.predict(normalized_payload)[0]
         return {"prediction": float(pred)}
-
+    
     except ValueError as e:
         logger.error(f"Validation error: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=str(e))
-
+        raise HTTPException(status_code=422, detail=str(e))
+    
     except CustomException:
-        # Server error - system issue
         logging.exception("Prediction failed")
         raise HTTPException(status_code=500, detail="Prediction failed")
-
+    
     except Exception as e:
-        logger.exception(
-            f"Prediction failed with error: {type(e).__name__}: {str(e)}"
-        )  # <-- this prints stack trace to Cloud Run logs
+        logger.exception(f"Prediction failed with error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction failed")
 
 
 @app.post("/predict_batch")
-def predict_batch(payload: List[StudentFeatures], request: Request) -> dict:
+def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
+    """
+    Batch prediction with dynamic validation.
+    """
     try:
         pipeline: PredictPipeline = request.app.state.pipeline
-        rows = [p.model_dump() for p in payload]
-        preds = pipeline.predict(rows)
+        preprocessor, model = pipeline._load_artifacts()
+        
+        # Get expected features
+        expected_features = list(preprocessor.feature_names_in_)
+        
+        # Validate and normalize each item
+        normalized_items = []
+        for idx, item in enumerate(payload):
+            # Check required fields
+            missing = [f for f in expected_features if f not in item]
+            if missing:
+                raise ValueError(f"Item {idx}: Missing required fields: {missing}")
+            
+            # Check extra fields
+            extra = [f for f in item.keys() if f not in expected_features]
+            if extra:
+                raise ValueError(f"Item {idx}: Unexpected fields: {extra}")
+            
+            # Normalize
+            normalized = {
+                key: value.strip().lower() if isinstance(value, str) and value.strip() else value
+                for key, value in item.items()
+            }
+            
+            # Check empty
+            empty = [k for k, v in normalized.items() if v == "" or v is None]
+            if empty:
+                raise ValueError(f"Item {idx}: Empty values not allowed for fields: {empty}")
+            
+            # Validate categories
+            if hasattr(preprocessor, 'transformers_'):
+                for transformer_name, transformer, feature_cols in preprocessor.transformers_:
+                    if transformer_name == "categorical" and hasattr(transformer.named_steps['onehot'], 'categories_'):
+                        ohe = transformer.named_steps['onehot']
+                        categories = ohe.categories_
+                        
+                        for i, col in enumerate(feature_cols):
+                            if col in normalized:
+                                valid_cats = [str(c).lower() for c in categories[i]]
+                                user_value = str(normalized[col]).lower()
+                                
+                                if user_value not in valid_cats:
+                                    raise ValueError(
+                                        f"Item {idx}: Invalid value '{item[col]}' for field '{col}'. "
+                                        f"Expected one of: {', '.join(sorted(set(str(c) for c in categories[i])))}"
+                                    )
+            
+            normalized_items.append(normalized)
+        
+        # Make predictions
+        preds = pipeline.predict(normalized_items)
         preds = np.asarray(preds).ravel()
         return {"prediction": [float(x) for x in preds]}
-
+    
     except ValueError as e:
         logger.error(f"Validation error: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=str(e))
-
+        raise HTTPException(status_code=422, detail=str(e))
+    
     except CustomException:
-        # Server error - system issue
         logging.exception("Prediction failed")
         raise HTTPException(status_code=500, detail="Prediction failed")
-
+    
     except Exception as e:
-        logger.exception(
-            f"Prediction failed with error: {type(e).__name__}: {str(e)}"
-        )  # <-- this prints stack trace to Cloud Run logs
+        logger.exception(f"Prediction failed with error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction failed")
