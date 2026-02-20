@@ -305,7 +305,7 @@ def test_end_to_end_smoke(fake_repo: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert -100 <= predictions[0] <= 200, \
         f"Prediction out of reasonable range: {predictions[0]}"   
     
-    print(f"\n✅ Smoke test passed!")
+    print("\n✅ Smoke test passed!")
     print(f"   Model: {best_model_name}")
     print(f"   Test R²: {report['best_model']['test_r2']:.4f}")
     print(f"   Sample prediction: {predictions[0]:.2f}")
