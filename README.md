@@ -13,9 +13,9 @@ A **production-grade machine learning system** that predicts student math scores
 
 ## 🎯 Project Highlights
 
-This isn't just a model - it's a **complete ML production system**:
+Focus isn't just a model - it's a **complete ML production system**:
 
-- ✅ **12+ ML models** with hyperparameter tuning (RandomizedSearch → GridSearch)
+- ✅ **10+ ML models** with hyperparameter tuning (RandomizedSearch → GridSearch)
 - ✅ **Automated CI/CD** with GitHub Actions
 - ✅ **Staging + Production environments** with manual promotion gates
 - ✅ **Weekly automated retraining** with quality thresholds
@@ -23,7 +23,7 @@ This isn't just a model - it's a **complete ML production system**:
 - ✅ **Cloud-native deployment** on Google Cloud Run
 - ✅ **MLflow integration** for experiment tracking
 - ✅ **Docker containerization** with multi-stage builds
-- ✅ **Comprehensive testing** (smoke tests, post-deploy validation)
+- ✅ **Comprehensive testing** (smoke tests, dynamic schema validation, post-deploy validation)
 
 ---
 
@@ -41,39 +41,39 @@ This isn't just a model - it's a **complete ML production system**:
 
 ## 🏗️ Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
-│                    Developer Workflow                        │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-                 ▼
+│                    Developer Workflow                       │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│               GitHub Actions (CI/CD)                         │
+│               GitHub Actions (CI/CD)                        │
 ├─────────────────────────────────────────────────────────────┤
 │  • CI: Lint, Format, Smoke Tests                            │
 │  • Staging: Auto-deploy on push to main                     │
 │  • Production: Tag-based deployment (manual)                │
 │  • Retrain: Weekly scheduled (Monday 7 AM UTC)              │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-                 ▼
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
 ┌──────────────────────────────────────┬──────────────────────┐
 │     Google Cloud Storage (GCS)       │   Artifact Registry  │
 ├──────────────────────────────────────┼──────────────────────┤
 │ • Model artifacts (model.pkl)        │ • Docker images      │
 │ • Preprocessor (preprocessor.pkl)    │ • Tagged versions    │
 │ • MLflow experiments                 │                      │
-└──────────────────────────────────────┴──────────────────────┘
-                 │
-                 ▼
+└───────────────────────────┬──────────┴──────────────────────┘
+                            │
+                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│            Google Cloud Run (Serverless)                     │
+│            Google Cloud Run (Serverless)                    │
 ├─────────────────────────────────────────────────────────────┤
 │  Staging: student-performance-api-staging                   │
-│  Production: student-performance-api                         │
+│  Production: student-performance-api                        │
 │  • Auto-scaling (0→N instances)                             │
-│  • HTTPS endpoints                                           │
-│  • Health monitoring                                         │
+│  • HTTPS endpoints                                          │
+│  • Health monitoring                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,7 +88,7 @@ Developer Push → main branch
     ↓
 CI: Lint + Format + Smoke Tests (GitHub Actions)
     ↓
-Train Model (8 models + hyperparameter tuning)
+Train Model (10 models + hyperparameter tuning)
     ↓
 Build Docker Image (with artifacts)
     ↓
@@ -165,13 +165,16 @@ Production Deployment
 ### **Preprocessing**
 
 ```python
-Numerical Features: None (all categorical)
+Numerical Features: 2 (Here we used none to prevent data leakage)
+  ├─ Imputation: SimpleImputer(strategy='median')
+  └─ Standardization: StandardScaler()
+
 Categorical Features: 5
   ├─ Imputation: SimpleImputer(strategy='most_frequent')
   └─ Encoding: OneHotEncoder(handle_unknown='ignore')
 ```
 
-**Output**: Sparse matrix (memory-efficient) with automatic densification for models that require it (KNN, Decision Trees, CatBoost).
+**Output**: Sparse matrix (memory-efficient) with automatic densification for models that require it (KNN, Decision Trees, Boosting models).
 
 ---
 
@@ -203,7 +206,7 @@ pip install -e ".[dev,api,ml,mlops]"
 ```bash
 # Train all models with hyperparameter tuning
 python scripts/train_and_publish.py \
-  --registry-uri gs://your-bucket/student-performance \
+  --registry-uri gs://YOUR-BUCKET/student-performance \
   --index-latest
 
 # Artifacts saved to: artifacts/
@@ -304,8 +307,8 @@ CONFIG = PipelineConfig(
     ),
     tuning=TuningConfig(
         cv=5,
-        scoring="neg_mean_squared_error",
-        random_n_iter=20,
+        scoring="r2",
+        random_n_iter=25,
         prefer_cv_for_selection=True
     )
 )
@@ -386,7 +389,7 @@ curl -X POST https://student-performance-api-[YOUR-DOMAIN].run.app/predict \
 ### **Current**
 
 - ✅ Post-deploy smoke tests (health + prediction validation)
-- ✅ MLflow experiment tracking (optional)
+- ✅ MLflow experiment tracking
 - ✅ Artifact versioning (GCS + tags)
 - ✅ Deployment logs (Cloud Run)
 
@@ -433,8 +436,7 @@ MIT License - see [LICENSE](LICENSE) file.
 
 **Ishtiaque Hossain**
 - GitHub: [@Ishtiaque-h](https://github.com/Ishtiaque-h)
-- LinkedIn: [Your LinkedIn](https://linkedin.com/in/your-profile)
-- Portfolio: [Your Portfolio](https://your-portfolio.com)
+- LinkedIn: [@ishtiaque-h](https://linkedin.com/in/ishtiaque-h)
 
 ---
 
@@ -446,21 +448,9 @@ MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
-## 📚 Learn More
-
-**Blog Posts** (if you write them):
-- [ ] "Building a Production ML Pipeline from Scratch"
-- [ ] "MLOps Best Practices: Lessons from Student Performance Predictor"
-- [ ] "Automated Model Retraining with Quality Gates"
-
 **Related Projects**:
-- [ ] [Another ML project]
-- [ ] [Data engineering project]
+- [Boston House Price Prediction](https://github.com/Ishtiaque-h/boston-house-pricing.git)
 
 ---
 
 **⭐ If you find this project helpful, please consider giving it a star!**
-
----
-
-This README showcases your project is portfolio-ready! **No dataset change needed** - your engineering excellence is the star. 🌟
