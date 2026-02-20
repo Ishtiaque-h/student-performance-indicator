@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional, Any, Dict, List
+from typing import Any, Dict, List
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
