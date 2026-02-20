@@ -136,7 +136,7 @@ jobs:
           
           echo "Using revision suffix: ${REVISION_SUFFIX}"
 
-          gcloud run deploy "${SERVICE}" \
+            gcloud run deploy "${SERVICE}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
             --image "${IMAGE_WITH_DIGEST}" \
@@ -144,17 +144,9 @@ jobs:
             --allow-unauthenticated \
             --service-account sp-api-sa@freshmoon.iam.gserviceaccount.com \
             --revision-suffix "${REVISION_SUFFIX}" \
-            --set-env-vars "${ENV_VARS}" \
-            --no-traffic  # Deploy without traffic, we'll shift traffic in the next step
-
-          # Route 100% traffic to the latest revision
-          echo "Routing traffic to latest revision..."
-          gcloud run services update-traffic "${SERVICE}" \
-            --project "${PROJECT_ID}" \
-            --region "${REGION}" \
-            --to-latest
-          
-          echo "Traffic routing complete"
+            --set-env-vars "${ENV_VARS}"
+            
+            echo "Deployment complete"
             
       - name: Post-deploy smoke
         shell: bash
