@@ -54,6 +54,7 @@ dev = [
   "ruff>=0.1,<1.0",
   "matplotlib>=3.7,<4.0",
   "seaborn>=0.13.2,<1.0",
+  "httpx>=0.24,<1.0",
 ]
 
 # Convenience: everything for full local development
