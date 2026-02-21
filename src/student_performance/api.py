@@ -2,6 +2,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List
+from uuid import uuid4
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
@@ -59,6 +60,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=APP_TITLE, version=__version__, lifespan=lifespan)
 
+# ---- Middleware ----
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = str(uuid4())
+    request.state.request_id = request_id
+    
+    # Add to response headers
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
 # ---- UI wiring ----
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -101,6 +113,7 @@ def schema(request: Request) -> Dict[str, Any]:
 
 @app.get("/meta")
 def meta(request: Request) -> dict:
+    """Expose useful metadata about the model and artifacts for debugging and UI display."""
     pipeline: PredictPipeline = request.app.state.pipeline
 
     import os
@@ -113,6 +126,29 @@ def meta(request: Request) -> dict:
         "MODEL_REGISTRY_URI": os.getenv("MODEL_REGISTRY_URI"),
         "FORCE_MODEL_DOWNLOAD": os.getenv("FORCE_MODEL_DOWNLOAD"),
     }
+
+
+@app.get("/model_info")
+def model_info(request: Request) -> dict:
+    """Get information about the currently loaded model."""
+    pipeline: PredictPipeline = request.app.state.pipeline
+    
+    try:
+        import json
+        report_path = pipeline.config.report_path
+        if report_path.exists():
+            with open(report_path) as f:
+                report = json.load(f)
+            
+            return {
+                "best_model": report.get("best_model", {}),
+                "trained_at": report.get("best_model", {}).get("timestamp", "unknown"),
+                "test_r2": report.get("best_model", {}).get("test_r2"),
+            }
+    except Exception:
+        pass
+    
+    return {"error": "Model report not available"}
 
 
 logger = get_logger(__name__)
@@ -129,6 +165,9 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
     - Categorical values are validated against preprocessor categories (case-insensitive)
     - Empty values are not allowed (after normalization)
     """
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.info(f"Received prediction request with ID: {request_id}")
+    
     try:
         pipeline: PredictPipeline = request.app.state.pipeline
         preprocessor, model = pipeline._load_artifacts()
