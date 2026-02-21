@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, model_validator
 
 from student_performance.exception import CustomException
-from student_performance.logger import logging  # use same custom logger
+from student_performance.logger import logging
 from student_performance.pipeline.predict_pipeline import PredictPipeline
 
 APP_TITLE = "Student Performance Predictor"
@@ -114,7 +114,7 @@ def meta(request: Request) -> dict:
     }
 
 
-logger = logging.getLogger("uvicorn.error")
+logger = logging.get_logger(__name__)
 
 
 @app.post("/predict")
@@ -193,7 +193,7 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
         raise HTTPException(status_code=422, detail=str(e))
 
     except CustomException:
-        logging.exception("Prediction failed")
+        logger.exception("Prediction failed")
         raise HTTPException(status_code=500, detail="Prediction failed")
 
     except Exception as e:
@@ -279,7 +279,7 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
         raise HTTPException(status_code=422, detail=str(e))
 
     except CustomException:
-        logging.exception("Prediction failed")
+        logger.exception("Prediction failed")
         raise HTTPException(status_code=500, detail="Prediction failed")
 
     except Exception as e:
