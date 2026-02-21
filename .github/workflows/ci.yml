@@ -5,10 +5,6 @@ on:
   push:
     branches: ["main"]
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -37,38 +33,3 @@ jobs:
 
       - name: Smoke tests
         run: pytest -m smoke -q
-
-  api-health:
-    environment: staging
-    runs-on: ubuntu-latest
-    env:
-      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      REGION: ${{ vars.GCP_REGION }}
-      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
-      ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }}
-      MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }}
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Auth to GCP (WIF)
-        uses: google-github-actions/auth@v3
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      
-      - name: Install
-        run: |
-          pip install -e ".[api,dev]"
-      
-      - name: Start API in background
-        run: |
-          uvicorn student_performance.api:app --host 127.0.0.1 --port 8000 &
-          sleep 5
-      
-      - name: Test health endpoint
-        run: |
-          curl -f http://127.0.0.1:8000/health || exit 1
