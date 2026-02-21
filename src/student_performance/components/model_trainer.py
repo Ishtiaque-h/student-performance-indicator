@@ -86,8 +86,6 @@ class DensePredictWrapper:
 @dataclass
 class ModelTrainerConfig:
     artifacts_dir: Path = Path("artifacts")
-    model_file_path: Path = artifacts_dir / "model.pkl"
-    report_file_path: Path = artifacts_dir / "model_report.json"
 
 
 class ModelTrainer:

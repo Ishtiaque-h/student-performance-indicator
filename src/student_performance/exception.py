@@ -1,5 +1,4 @@
 import sys
-from dataclasses import dataclass
 from typing import Optional
 
 
@@ -26,7 +25,6 @@ def _format_error_details(error: BaseException, error_detail: sys) -> str:
     )
 
 
-@dataclass
 class CustomException(Exception):
     """
     Custom exception wrapper used across the project to provide consistent,
@@ -39,12 +37,9 @@ class CustomException(Exception):
             raise CustomException(e, sys)
     """
 
-    error_message: str
-    original_exception: Optional[BaseException] = None
-
     def __init__(self, error: BaseException, error_detail: sys):
-        self.original_exception = error
-        self.error_message = _format_error_details(error, error_detail)
+        self.original_exception: Optional[BaseException] = error
+        self.error_message: str = _format_error_details(error, error_detail)
         super().__init__(self.error_message)
 
     def __str__(self) -> str:

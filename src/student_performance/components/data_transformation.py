@@ -18,7 +18,6 @@ from student_performance.components.config import CONFIG
 @dataclass
 class DataTransformationConfig:
     artifacts_dir: Path = Path("artifacts")
-    preprocessor_obj_file_path: Path = artifacts_dir / "preprocessor.pkl"
 
 
 class DataTransformation:

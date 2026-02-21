@@ -1,7 +1,6 @@
 import sys
 import json
 import hashlib
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple
@@ -23,16 +22,7 @@ def file_md5(path: Path) -> str:
     return h.hexdigest()
 
 
-@dataclass
-class DataIngestionConfig:
-    # will be resolved using CONFIG in runtime
-    pass
-
-
 class DataIngestion:
-    def __init__(self):
-        self.ingestion_config = DataIngestionConfig()
-
     def initiate_data_ingestion(self) -> Tuple[str, str]:
         logging.info("Data Ingestion started")
         try:

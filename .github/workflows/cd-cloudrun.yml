@@ -142,7 +142,7 @@ jobs:
             --image "${IMAGE_WITH_DIGEST}" \
             --port 8080 \
             --allow-unauthenticated \
-            --service-account sp-api-sa@freshmoon.iam.gserviceaccount.com \
+            --service-account "${{ secrets.GCP_API_SERVICE_ACCOUNT }}" \
             --revision-suffix "${REVISION_SUFFIX}" \
             --set-env-vars "${ENV_VARS}"
             
