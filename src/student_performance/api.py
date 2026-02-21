@@ -10,8 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, model_validator
 
+from student_performance import __version__
 from student_performance.exception import CustomException
-from student_performance.logger import logging
+from student_performance.logger import get_logger
 from student_performance.pipeline.predict_pipeline import PredictPipeline
 
 APP_TITLE = "Student Performance Predictor"
@@ -56,7 +57,7 @@ async def lifespan(app: FastAPI):
     # nothing to cleanup
 
 
-app = FastAPI(title=APP_TITLE, version="1.0", lifespan=lifespan)
+app = FastAPI(title=APP_TITLE, version=__version__, lifespan=lifespan)
 
 # ---- UI wiring ----
 BASE_DIR = Path(__file__).resolve().parent
@@ -114,7 +115,7 @@ def meta(request: Request) -> dict:
     }
 
 
-logger = logging.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 @app.post("/predict")
