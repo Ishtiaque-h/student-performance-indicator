@@ -36,6 +36,8 @@ jobs:
 
   api-health:
     runs-on: ubuntu-latest
+    env:
+      MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }}
     steps:
       - uses: actions/checkout@v4
       
