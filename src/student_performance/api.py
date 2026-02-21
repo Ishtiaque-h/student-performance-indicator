@@ -60,16 +60,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=APP_TITLE, version=__version__, lifespan=lifespan)
 
+
 # ---- Middleware ----
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     request_id = str(uuid4())
     request.state.request_id = request_id
-    
+
     # Add to response headers
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
+
 
 # ---- UI wiring ----
 BASE_DIR = Path(__file__).resolve().parent
@@ -132,14 +134,15 @@ def meta(request: Request) -> dict:
 def model_info(request: Request) -> dict:
     """Get information about the currently loaded model."""
     pipeline: PredictPipeline = request.app.state.pipeline
-    
+
     try:
         import json
+
         report_path = pipeline.config.report_path
         if report_path.exists():
             with open(report_path) as f:
                 report = json.load(f)
-            
+
             return {
                 "best_model": report.get("best_model", {}),
                 "trained_at": report.get("best_model", {}).get("timestamp", "unknown"),
@@ -147,7 +150,7 @@ def model_info(request: Request) -> dict:
             }
     except Exception:
         pass
-    
+
     return {"error": "Model report not available"}
 
 
@@ -167,7 +170,7 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
     """
     request_id = getattr(request.state, "request_id", "unknown")
     logger.info(f"Received prediction request with ID: {request_id}")
-    
+
     try:
         pipeline: PredictPipeline = request.app.state.pipeline
         preprocessor, model = pipeline._load_artifacts()
