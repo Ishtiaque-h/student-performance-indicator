@@ -42,6 +42,7 @@ jobs:
       REGION: ${{ vars.GCP_REGION }}
       SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
       ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }}
+      MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }}
     steps:
       - uses: actions/checkout@v4
       
