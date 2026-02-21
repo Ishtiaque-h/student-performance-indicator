@@ -9,6 +9,7 @@ from typing import List, Optional
 from student_performance.pipeline.train_pipeline import TrainPipeline
 from student_performance.utils import find_project_root
 from student_performance.registry.gcs_registry import upload_run_index, upload_release
+from student_performance.components.config import CONFIG
 
 
 def make_run_id() -> str:
@@ -65,7 +66,7 @@ def main() -> None:
         TrainPipeline().run()
 
     repo_root = find_project_root()
-    artifacts_dir = repo_root / "artifacts"
+    artifacts_dir = CONFIG.artifacts.artifacts_dir(repo_root)
 
     files = [
         "model.pkl",

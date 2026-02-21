@@ -1,4 +1,6 @@
 from __future__ import annotations
+import json
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List
@@ -17,6 +19,8 @@ from student_performance.logger import get_logger
 from student_performance.pipeline.predict_pipeline import PredictPipeline
 
 APP_TITLE = "Student Performance Predictor"
+
+logger = get_logger(__name__)
 
 
 # ---- Pydantic request models ----
@@ -79,6 +83,60 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+# ---- Validation helper ----
+def _validate_and_normalize(
+    item: Dict[str, Any],
+    expected_features: List[str],
+    preprocessor: Any,
+    item_prefix: str = "",
+) -> Dict[str, Any]:
+    """
+    Validate and normalize a single prediction payload dict.
+    Raises ValueError with an optional item_prefix for batch error messages.
+    """
+    prefix = f"{item_prefix}: " if item_prefix else ""
+
+    missing = [f for f in expected_features if f not in item]
+    if missing:
+        raise ValueError(f"{prefix}Missing required fields: {missing}")
+
+    extra = [f for f in item.keys() if f not in expected_features]
+    if extra:
+        raise ValueError(f"{prefix}Unexpected fields: {extra}")
+
+    normalized = {
+        key: (
+            value.strip().lower() if isinstance(value, str) and value.strip() else value
+        )
+        for key, value in item.items()
+    }
+
+    empty = [k for k, v in normalized.items() if v == "" or v is None]
+    if empty:
+        raise ValueError(f"{prefix}Empty values not allowed for fields: {empty}")
+
+    if hasattr(preprocessor, "transformers_"):
+        for transformer_name, transformer, feature_cols in preprocessor.transformers_:
+            if transformer_name == "categorical" and hasattr(
+                transformer.named_steps["onehot"], "categories_"
+            ):
+                ohe = transformer.named_steps["onehot"]
+                categories = ohe.categories_
+
+                for i, col in enumerate(feature_cols):
+                    if col in normalized:
+                        valid_cats = [str(c).lower() for c in categories[i]]
+                        user_value = str(normalized[col]).lower()
+
+                        if user_value not in valid_cats:
+                            raise ValueError(
+                                f"{prefix}Invalid value '{item[col]}' for field '{col}'. "
+                                f"Expected one of: {', '.join(sorted(set(str(c) for c in categories[i])))}"
+                            )
+
+    return normalized
+
+
 # ---- API endpoints ----
 @app.get("/health")
 def health(request: Request) -> dict:
@@ -118,8 +176,6 @@ def meta(request: Request) -> dict:
     """Expose useful metadata about the model and artifacts for debugging and UI display."""
     pipeline: PredictPipeline = request.app.state.pipeline
 
-    import os
-
     return {
         "artifacts_dir": str(pipeline.config.artifacts_dir),
         "model_path": str(pipeline.config.model_path),
@@ -136,8 +192,6 @@ def model_info(request: Request) -> dict:
     pipeline: PredictPipeline = request.app.state.pipeline
 
     try:
-        import json
-
         report_path = pipeline.config.report_path
         if report_path.exists():
             with open(report_path) as f:
@@ -152,9 +206,6 @@ def model_info(request: Request) -> dict:
         pass
 
     return {"error": "Model report not available"}
-
-
-logger = get_logger(__name__)
 
 
 @app.post("/predict")
@@ -175,59 +226,11 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
         pipeline: PredictPipeline = request.app.state.pipeline
         preprocessor, model = pipeline._load_artifacts()
 
-        # Get expected features from preprocessor
         expected_features = list(preprocessor.feature_names_in_)
+        normalized_payload = _validate_and_normalize(
+            payload, expected_features, preprocessor
+        )
 
-        # Validate: check all required fields are present
-        missing = [f for f in expected_features if f not in payload]
-        if missing:
-            raise ValueError(f"Missing required fields: {missing}")
-
-        # Validate: check no extra fields
-        extra = [f for f in payload.keys() if f not in expected_features]
-        if extra:
-            raise ValueError(f"Unexpected fields: {extra}")
-
-        # Normalize string values
-        normalized_payload = {
-            key: (
-                value.strip().lower()
-                if isinstance(value, str) and value.strip()
-                else value
-            )
-            for key, value in payload.items()
-        }
-
-        # Check for empty values
-        empty = [k for k, v in normalized_payload.items() if v == "" or v is None]
-        if empty:
-            raise ValueError(f"Empty values not allowed for fields: {empty}")
-
-        # Validate categories against preprocessor (if categorical)
-        if hasattr(preprocessor, "transformers_"):
-            for (
-                transformer_name,
-                transformer,
-                feature_cols,
-            ) in preprocessor.transformers_:
-                if transformer_name == "categorical" and hasattr(
-                    transformer.named_steps["onehot"], "categories_"
-                ):
-                    ohe = transformer.named_steps["onehot"]
-                    categories = ohe.categories_
-
-                    for i, col in enumerate(feature_cols):
-                        if col in normalized_payload:
-                            valid_cats = [str(c).lower() for c in categories[i]]
-                            user_value = str(normalized_payload[col]).lower()
-
-                            if user_value not in valid_cats:
-                                raise ValueError(
-                                    f"Invalid value '{payload[col]}' for field '{col}'. "
-                                    f"Expected one of: {', '.join(sorted(set(str(c) for c in categories[i])))}"
-                                )
-
-        # Make prediction
         pred = pipeline.predict(normalized_payload)[0]
         return {"prediction": float(pred)}
 
@@ -253,66 +256,15 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
         pipeline: PredictPipeline = request.app.state.pipeline
         preprocessor, model = pipeline._load_artifacts()
 
-        # Get expected features
         expected_features = list(preprocessor.feature_names_in_)
 
-        # Validate and normalize each item
-        normalized_items = []
-        for idx, item in enumerate(payload):
-            # Check required fields
-            missing = [f for f in expected_features if f not in item]
-            if missing:
-                raise ValueError(f"Item {idx}: Missing required fields: {missing}")
+        normalized_items = [
+            _validate_and_normalize(
+                item, expected_features, preprocessor, item_prefix=f"Item {idx}"
+            )
+            for idx, item in enumerate(payload)
+        ]
 
-            # Check extra fields
-            extra = [f for f in item.keys() if f not in expected_features]
-            if extra:
-                raise ValueError(f"Item {idx}: Unexpected fields: {extra}")
-
-            # Normalize
-            normalized = {
-                key: (
-                    value.strip().lower()
-                    if isinstance(value, str) and value.strip()
-                    else value
-                )
-                for key, value in item.items()
-            }
-
-            # Check empty
-            empty = [k for k, v in normalized.items() if v == "" or v is None]
-            if empty:
-                raise ValueError(
-                    f"Item {idx}: Empty values not allowed for fields: {empty}"
-                )
-
-            # Validate categories
-            if hasattr(preprocessor, "transformers_"):
-                for (
-                    transformer_name,
-                    transformer,
-                    feature_cols,
-                ) in preprocessor.transformers_:
-                    if transformer_name == "categorical" and hasattr(
-                        transformer.named_steps["onehot"], "categories_"
-                    ):
-                        ohe = transformer.named_steps["onehot"]
-                        categories = ohe.categories_
-
-                        for i, col in enumerate(feature_cols):
-                            if col in normalized:
-                                valid_cats = [str(c).lower() for c in categories[i]]
-                                user_value = str(normalized[col]).lower()
-
-                                if user_value not in valid_cats:
-                                    raise ValueError(
-                                        f"Item {idx}: Invalid value '{item[col]}' for field '{col}'. "
-                                        f"Expected one of: {', '.join(sorted(set(str(c) for c in categories[i])))}"
-                                    )
-
-            normalized_items.append(normalized)
-
-        # Make predictions
         preds = pipeline.predict(normalized_items)
         preds = np.asarray(preds).ravel()
         return {"prediction": [float(x) for x in preds]}

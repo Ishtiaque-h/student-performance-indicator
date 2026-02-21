@@ -55,8 +55,6 @@ def download_required_artifacts(
     gcs = parse_gs_uri(registry_uri)
     client = storage.Client()
     bucket = client.bucket(gcs.bucket)
-    print("GCS client project:", client.project)
-    print("GCS client bucket:", gcs.bucket)
 
     for fname in required_files:
         blob = bucket.blob(_blob_name(gcs.prefix, fname))
