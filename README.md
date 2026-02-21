@@ -1,29 +1,55 @@
 # 🎓 Student Performance Predictor - End-to-End MLOps Pipeline
 
 [![CI](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/ci.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/ci.yml)
-[![Deploy Staging](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml)
-[![Deploy Production](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/cd-cloudrun.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/cd-cloudrun.yml)
+[![CD - Deploy](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 A **production-grade machine learning system** that predicts student math scores based on demographic and educational factors. This project demonstrates end-to-end MLOps practices including automated retraining, quality gates, staged deployments, and cloud-native architecture.
 
-🔗 **Live Demo**: [https://student-performance-api-[YOUR-DOMAIN].run.app](https://student-performance-api-654581958038.us-central1.run.app)
+🔗 **Live Demo**: [https://student-performance-api-654581958038.us-central1.run.app](https://student-performance-api-654581958038.us-central1.run.app)
 
 ---
 
 ## 🎯 Project Highlights
 
-Focus isn't just a model - it's a **complete ML production system**:
+This isn't just a model - it's a **complete ML production system**:
 
 - ✅ **10+ ML models** with hyperparameter tuning (RandomizedSearch → GridSearch)
 - ✅ **Automated CI/CD** with GitHub Actions
 - ✅ **Staging + Production environments** with manual promotion gates
 - ✅ **Weekly automated retraining** with quality thresholds
-- ✅ **FastAPI REST service** with health checks and schema introspection
+- ✅ **FastAPI REST service** with dynamic schema validation
 - ✅ **Cloud-native deployment** on Google Cloud Run
 - ✅ **MLflow integration** for experiment tracking
 - ✅ **Docker containerization** with multi-stage builds
-- ✅ **Comprehensive testing** (smoke tests, dynamic schema validation, post-deploy validation)
+- ✅ **Dataset-agnostic design** - change one file to use any dataset
+
+---
+
+## 🌟 Key Differentiators
+
+What makes this project stand out:
+
+### **1. Dataset-Agnostic Design**
+- Change **one file** (`config.py`) to use a different dataset
+- API validation, preprocessing, and training adapt automatically
+- Validation logic reads from **trained preprocessor** (single source of truth)
+
+### **2. Production-Grade Testing**
+- Smoke tests focus on "does the whole pipeline run?"
+- Dynamic schema validation prevents invalid inputs
+- Tests work with **any dataset** (real data → synthetic fallback)
+
+### **3. Sophisticated Hyperparameter Tuning**
+- Two-stage approach: RandomizedSearch (broad) → GridSearch (refined)
+- Custom refinement strategies (window-based, log-scale)
+- Smart densification for sparse matrices
+
+### **4. MLOps Best Practices**
+- Staged deployments (staging → manual review → production)
+- Quality gates (R² thresholds, health checks)
+- Artifact versioning (GCS + Git tags)
+- Automated retraining with human oversight
 
 ---
 
@@ -96,7 +122,7 @@ Deploy to STAGING (auto)
     ↓
 [Manual Testing & Review]
     ↓
-Create Release Tag (e.g., v3.2.6)
+Create Release Tag (e.g., v3.3.0)
     ↓
 Deploy to PRODUCTION (auto-triggered by tag)
     ↓
@@ -120,6 +146,41 @@ Manual Promotion: Create release tag if satisfied
     ↓
 Production Deployment
 ```
+
+**Note on Scheduled Retraining:**
+> ❓ **Does retraining automatically update production?**
+> 
+> **No** - scheduled retraining follows a **safe deployment pattern**:
+> 1. ✅ Retraining happens automatically (every Monday)
+> 2. ✅ Quality gates ensure model meets minimum R² threshold
+> 3. ✅ New model is deployed to **staging** automatically
+> 4. ⏸️ **Manual review required** before production promotion
+> 5. ✅ Create release tag (e.g., `v3.3.1`) to deploy to production
+>
+> This prevents untested models from reaching production and allows you to:
+> - Review MLflow metrics
+> - Test staging deployment
+> - Validate predictions look reasonable
+> - Control production release timing
+
+---
+
+## 📊 Exploratory Data Analysis
+
+The `notebooks/` directory contains Jupyter notebooks documenting the data exploration process:
+
+- **EDA.ipynb**: 
+  - Dataset overview and statistics
+  - Feature distributions and correlations
+  - Missing value analysis
+  - Insights that informed feature engineering decisions
+
+This analysis informed key decisions:
+- ✅ Dropping reading/writing scores to prevent data leakage
+- ✅ Using only categorical features (no numerical scaling needed)
+- ✅ Setting R² threshold at 0.10 (reflecting data characteristics)
+
+[View EDA Notebook →](./notebooks/EDA.ipynb)
 
 ---
 
@@ -165,11 +226,11 @@ Production Deployment
 ### **Preprocessing**
 
 ```python
-Numerical Features: 2 (Here we used none to prevent data leakage)
+Numerical Features:
   ├─ Imputation: SimpleImputer(strategy='median')
   └─ Standardization: StandardScaler()
 
-Categorical Features: 5
+Categorical Features:
   ├─ Imputation: SimpleImputer(strategy='most_frequent')
   └─ Encoding: OneHotEncoder(handle_unknown='ignore')
 ```
@@ -266,23 +327,34 @@ student-performance-indicator/
 ├── src/student_performance/
 │   ├── components/             # ML pipeline components
 │   │   ├── config.py           # Centralized configuration
-│   │   ├── data_ingestion.py  # Data loading + splitting
+│   │   ├── data_ingestion.py   # Data loading + splitting
 │   │   ├── data_transformation.py  # Preprocessing
-│   │   └── model_trainer.py   # Model training + tuning
+│   │   └── model_trainer.py    # Model training + tuning
 │   ├── pipeline/
-│   │   ├── train_pipeline.py  # Training orchestration
-│   │   └── predict_pipeline.py  # Inference pipeline
+│   │   ├── train_pipeline.py   # Training orchestration
+│   │   └── predict_pipeline.py # Inference pipeline
 │   ├── mlops/
-│   │   └── mlflow_logger.py   # MLflow integration
+│   │   └── mlflow_logger.py    # MLflow integration
 │   ├── registry/
-│   │   └── gcs_registry.py    # GCS artifact management
+│   │   └── gcs_registry.py     # GCS artifact management
+├── static/
+│   └── app.js                  # Frontend JavaScript (UI)
+├── templates/
+│   └── index.html              # HTML templates (UI)
 │   ├── api.py                  # FastAPI application
 │   ├── modeling.py             # evaluate_models implementation
 │   └── utils.py                # Utility functions
+│   └── logger.py               # Logging setup
+│   └── exception.py            # Custome error handling
+│   └── artifacts_gcs.py        # GCS downloads
 ├── scripts/
-│   └── train_and_publish.py   # CLI for training + publishing
+│   └── train_and_publish.py    # CLI for training + publishing
 ├── tests/
-│   └── test_smoke.py           # Smoke tests
+│   ├── test_smoke.py           # Dataset-agnostic smoke tests
+│   └── test_api_validation.py  # Dynamic schema validation tests
+├── notebooks/
+│   ├── EDA_student_performance.ipynb   # Model EDA prep
+│   └── model_training.ipynb    # Model training prep
 ├── Dockerfile                  # Multi-stage Docker build
 ├── pyproject.toml              # Package configuration
 └── README.md
@@ -303,13 +375,19 @@ CONFIG = PipelineConfig(
     ),
     split=SplitConfig(
         test_size=0.2,
-        random_state=42
+        random_state=42,
+        shuffle=True
     ),
     tuning=TuningConfig(
         cv=5,
         scoring="r2",
         random_n_iter=25,
+        random_seed=42,
         prefer_cv_for_selection=True
+    ),
+    dense_safety=DenseSafetyConfig(
+        dense_feature_threshold=5000,
+        dense_cell_threshold=5_000_000
     )
 )
 ```
@@ -324,15 +402,17 @@ CONFIG = PipelineConfig(
 |--------|----------|-------------|
 | `GET` | `/health` | Health check + artifact status |
 | `GET` | `/` | Web UI (form-based prediction) |
-| `GET` | `/schema` | Feature schema (from trained preprocessor) |
+| `GET` | `/schema` | Feature schema (from trained preprocessor) ✨ |
 | `GET` | `/meta` | Artifact metadata (paths, versions) |
-| `POST` | `/predict` | Single prediction |
-| `POST` | `/predict_batch` | Batch predictions |
+| `POST` | `/predict` | Single prediction (with dynamic validation) ✨ |
+| `POST` | `/predict_batch` | Batch predictions (with dynamic validation) ✨ |
+
+✨ = **Dynamic validation** - inputs validated against categories learned during training
 
 ### **Example Request**
 
 ```bash
-curl -X POST https://student-performance-api-[YOUR-DOMAIN].run.app/predict \
+curl -X POST https://student-performance-api-654581958038.us-central1.run.app/predict \
   -H "Content-Type: application/json" \
   -d '{
     "gender": "male",
@@ -349,6 +429,84 @@ curl -X POST https://student-performance-api-[YOUR-DOMAIN].run.app/predict \
   "prediction": 68.4
 }
 ```
+
+---
+
+## 🔄 Dynamic Schema Validation
+
+### Design Philosophy
+
+This API uses **dynamic schema validation** - it validates incoming requests against the categories learned during training, not hard-coded values. This makes the entire pipeline **dataset-agnostic**.
+
+### How It Works
+
+1. **Training Phase**:
+   ```python
+   # Preprocessor learns valid categories from data
+   OneHotEncoder().fit(["male", "female", ...])
+   ```
+
+2. **API Startup**:
+   ```python
+   # API loads preprocessor and extracts learned categories
+   preprocessor = load_object("artifacts/preprocessor.pkl")
+   valid_categories = preprocessor.categories_
+   ```
+
+3. **Request Validation**:
+   ```python
+   # Validates user input against learned categories
+   if user_value.lower() not in valid_categories:
+       raise ValueError(f"Invalid value. Expected one of: {valid_categories}")
+   ```
+
+### Benefits
+
+- ✅ **Single source of truth**: Validation logic comes from training data
+- ✅ **Dataset-agnostic**: Works with any tabular dataset
+- ✅ **Always in sync**: Impossible for API validation to diverge from model expectations
+- ✅ **User-friendly**: Case-insensitive + whitespace trimming
+- ✅ **Production-safe**: Rejects invalid inputs before they reach the model
+
+### Example Error Messages
+
+**Empty field:**
+```json
+{
+  "detail": "Empty values not allowed for fields: ['gender']"
+}
+```
+
+**Invalid category:**
+```json
+{
+  "detail": "Invalid value 'non-binary' for field 'gender'. Expected one of: female, male"
+}
+```
+
+**Missing field:**
+```json
+{
+  "detail": "Missing required fields: ['test_preparation_course']"
+}
+```
+
+### Using with a New Dataset
+
+Simply update `config.py` and retrain - the API adapts automatically:
+
+```python
+# config.py
+CONFIG = PipelineConfig(
+    dataset=DatasetConfig(
+        data_rel_path="data/raw/new_data.csv",
+        target_col="target_column",
+        drop_cols=["id", "timestamp"]
+    )
+)
+```
+
+**No API code changes needed!** 🎉
 
 ---
 
@@ -405,12 +563,47 @@ curl -X POST https://student-performance-api-[YOUR-DOMAIN].run.app/predict \
 
 ## 🧪 Testing Strategy
 
-| Test Type | Coverage | When |
-|-----------|----------|------|
-| **Smoke Tests** | End-to-end pipeline | Every PR + deployment |
-| **Linting** | Code quality (ruff) | Every commit |
-| **Formatting** | Code style (black) | Every commit |
-| **Post-Deploy** | Live API validation | After production deploy |
+### **Smoke Tests** 
+
+Our smoke tests are **fully dataset-agnostic**:
+
+```bash
+pytest -m smoke -v
+```
+
+**Design Philosophy:**
+- **Purpose**: Validate pipeline runs end-to-end, NOT model quality
+- **Focus**: Structural correctness (artifacts created, predictions deterministic)
+- **Data strategy**: Prefer real data sampling → fall back to synthetic with learnable patterns
+- **Speed**: Complete in ~3 seconds using fast Ridge model
+- **R² threshold**: `-10.0 to 1.0` (validates it's a number, not model accuracy)
+
+**Why lenient R² thresholds?**
+> With the student dataset, R² can be **legitimately negative** when we drop correlated features (reading/writing scores) to prevent data leakage. Smoke tests validate the **pipeline works**, not that the **model is good**.
+
+| Test Type | Coverage | When | Purpose |
+|-----------|----------|------|---------|
+| **Smoke Tests** | End-to-end pipeline | Every PR + deployment | Does it run? |
+| **API Validation Tests** | Dynamic schema validation | Every commit | Are inputs validated? |
+| **Linting** | Code quality (ruff) | Every commit | Code style |
+| **Formatting** | Code style (black) | Every commit | Consistent formatting |
+| **Post-Deploy** | Live API validation | After production deploy | Is deployment healthy? |
+
+### **Running Tests**
+
+```bash
+# Run all tests
+pytest -v
+
+# Run only smoke tests (fast)
+pytest -m smoke -v
+
+# Run with coverage report
+pytest --cov=student_performance --cov-report=html
+
+# Run API validation tests
+pytest tests/test_api_validation.py -v
+```
 
 ---
 
@@ -434,7 +627,7 @@ MIT License - see [LICENSE](LICENSE) file.
 
 ## 👤 Author
 
-**Ishtiaque Hossain**
+**Md Ishtiaque Hossain**
 - GitHub: [@Ishtiaque-h](https://github.com/Ishtiaque-h)
 - LinkedIn: [@ishtiaque-h](https://linkedin.com/in/ishtiaque-h)
 
