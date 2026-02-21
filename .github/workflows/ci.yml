@@ -46,6 +46,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
