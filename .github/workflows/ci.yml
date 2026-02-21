@@ -35,9 +35,13 @@ jobs:
         run: pytest -m smoke -q
 
   api-health:
+    environment: staging
     runs-on: ubuntu-latest
     env:
-      MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }}
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      ARTIFACT_REPO: ${{ vars.ARTIFACT_REPO }}
     steps:
       - uses: actions/checkout@v4
       
