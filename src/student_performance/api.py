@@ -1,5 +1,4 @@
 from __future__ import annotations
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List
@@ -12,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, model_validator
 
 from student_performance.exception import CustomException
+from student_performance.logger import logging  # use same custom logger
 from student_performance.pipeline.predict_pipeline import PredictPipeline
 
 APP_TITLE = "Student Performance Predictor"
