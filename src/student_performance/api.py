@@ -187,6 +187,7 @@ def schema(request: Request) -> Dict[str, Any]:
 
     return {"features": features}
 
+
 @app.get("/meta")
 def meta(request: Request) -> dict:
     """Expose useful metadata about the model and artifacts for debugging and UI display."""
