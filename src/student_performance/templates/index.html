@@ -5,39 +5,239 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ app_title }}</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 40px; max-width: 880px; }
-    .row { display: grid; grid-template-columns: 260px 1fr; gap: 12px; margin-bottom: 12px; align-items: center; }
-    input { padding: 8px; font-size: 14px; width: 100%; }
-    button { padding: 10px 14px; font-size: 14px; cursor: pointer; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 18px; }
-    .muted { color: #666; }
-    pre { background: #f7f7f7; padding: 12px; border-radius: 8px; overflow: auto; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+      color: #1a202c;
+    }
+
+    .container { width: 100%; max-width: 560px; }
+
+    /* Header */
+    .header { text-align: center; margin-bottom: 32px; }
+    .header h1 { font-size: 1.8rem; font-weight: 700; color: #1a202c; }
+    .header p { color: #718096; margin-top: 6px; font-size: 0.95rem; }
+    .header a { color: #4f46e5; text-decoration: none; }
+    .header a:hover { text-decoration: underline; }
+
+    /* Cards */
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #718096;
+      margin-bottom: 20px;
+    }
+
+    /* Form fields */
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    .field select, .field input {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #1a202c;
+      appearance: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      cursor: pointer;
+    }
+    .field select:focus, .field input:focus {
+      outline: none;
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 3px rgba(79,70,229,0.12);
+      background: #fff;
+    }
+    /* Dropdown arrow */
+    .select-wrap { position: relative; }
+    .select-wrap::after {
+      content: "▾";
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #718096;
+      pointer-events: none;
+      font-size: 0.85rem;
+    }
+
+    /* Predict button */
+    #submit {
+      width: 100%;
+      padding: 13px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background: #4f46e5;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.15s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #submit:hover:not(:disabled) { background: #4338ca; }
+    #submit:active:not(:disabled) { transform: scale(0.98); }
+    #submit:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+    /* Spinner */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2.5px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #submit.loading .spinner { display: block; }
+    #submit.loading .btn-text { display: none; }
+
+    /* Result */
+    .result-idle { color: #a0aec0; font-size: 0.95rem; }
+
+    .result-score {
+      text-align: center;
+      padding: 16px 0 8px;
+    }
+    .result-score .score-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #718096;
+      margin-bottom: 6px;
+    }
+    .result-score .score-value {
+      font-size: 3.5rem;
+      font-weight: 800;
+      color: #4f46e5;
+      line-height: 1;
+    }
+    .result-score .score-unit {
+      font-size: 1rem;
+      color: #718096;
+      margin-top: 4px;
+    }
+
+    /* Score bar */
+    .score-bar-wrap {
+      background: #e2e8f0;
+      border-radius: 99px;
+      height: 8px;
+      margin: 16px 0 6px;
+      overflow: hidden;
+    }
+    .score-bar {
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, #818cf8, #4f46e5);
+      width: 0%;
+      transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .score-range {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #a0aec0;
+    }
+
+    /* Error */
+    .result-error {
+      background: #fff5f5;
+      border: 1px solid #fed7d7;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #c53030;
+      font-size: 0.9rem;
+    }
+
+    /* Raw response */
+    details { margin-top: 16px; }
+    summary {
+      font-size: 0.8rem;
+      color: #a0aec0;
+      cursor: pointer;
+      user-select: none;
+    }
+    summary:hover { color: #718096; }
+    pre {
+      margin-top: 8px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 12px;
+      border-radius: 8px;
+      overflow: auto;
+      font-size: 0.8rem;
+      color: #4a5568;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      font-size: 0.78rem;
+      color: #a0aec0;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
-  <h1>{{ app_title }}</h1>
-  <p class="muted">
-    Demo UI for your deployed model. API docs: <a href="/docs">/docs</a>
-  </p>
+  <div class="container">
 
-  <div class="card">
-    <h2>Input</h2>
-    <div id="form"></div>
-    <button id="submit">Predict</button>
+    <div class="header">
+      <h1>🎓 {{ app_title }}</h1>
+      <p>Predict a student's math score from demographic factors · <a href="/docs">API docs</a></p>
+    </div>
+
+    <div class="card">
+      <h2>Student Details</h2>
+      <div id="form"></div>
+      <button id="submit">
+        <div class="spinner"></div>
+        <span class="btn-text">Predict Score</span>
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Prediction</h2>
+      <div id="result" class="result-idle">Fill in the details above and click Predict.</div>
+      <details>
+        <summary>Raw API response</summary>
+        <pre id="raw"></pre>
+      </details>
+    </div>
+
+    <div class="footer">
+      Powered by a model trained on 1,000 students · <a href="/docs" style="color:#a0aec0">REST API</a>
+    </div>
+
   </div>
-
-  <div style="height: 18px;"></div>
-
-  <div class="card">
-    <h2>Output</h2>
-    <div id="result" class="muted">No prediction yet.</div>
-    <div style="height: 10px;"></div>
-    <details>
-      <summary class="muted">Raw response</summary>
-      <pre id="raw"></pre>
-    </details>
-  </div>
-
   <script src="/static/app.js"></script>
 </body>
 </html>
