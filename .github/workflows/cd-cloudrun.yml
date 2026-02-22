@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install (for tests)
         run: |
@@ -66,21 +67,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[all]"  # includes api, dev, ml, mlops deps; remove extras you don't need for faster installs
 
-      - name: Train + publish artifacts for this release tag
+      - name: Read promoted model URI from registry
         shell: bash
         run: |
           set -euo pipefail
+          : "${MODEL_REGISTRY_URI:?MODEL_REGISTRY_URI must be set}"
 
-          : "${MODEL_REGISTRY_URI:?MODEL_REGISTRY_URI must be set to base, e.g. gs://freshmoon39/student-performance}"
+          # Read the URI of the model that passed staging quality gate
+          PROMOTED_URI="$(gcloud storage cat "${MODEL_REGISTRY_URI}/promoted/latest_uri.txt")"
+          
+          if [ -z "${PROMOTED_URI}" ]; then
+            echo "ERROR: No promoted model URI found. Run retrain workflow first."
+            exit 1
+          fi
 
-          TAG="${GITHUB_REF_NAME}"  # v*
-          python scripts/train_and_publish.py \
-            --registry-uri "${MODEL_REGISTRY_URI}" \
-            --index-latest \
-            --release-tag "${TAG}" | tee /tmp/publish.out
-
-          echo "=== publish outputs ==="
-          cat /tmp/publish.out
+          echo "Promoting model: ${PROMOTED_URI}"
+          echo "ARTIFACTS_URI=${PROMOTED_URI}" >> "$GITHUB_ENV"
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
@@ -136,7 +138,7 @@ jobs:
           
           echo "Using revision suffix: ${REVISION_SUFFIX}"
 
-            gcloud run deploy "${SERVICE}" \
+          gcloud run deploy "${SERVICE}" \
             --project "${PROJECT_ID}" \
             --region "${REGION}" \
             --image "${IMAGE_WITH_DIGEST}" \
@@ -146,7 +148,7 @@ jobs:
             --revision-suffix "${REVISION_SUFFIX}" \
             --set-env-vars "${ENV_VARS}"
             
-            echo "Deployment complete"
+          echo "Deployment complete"
             
       - name: Post-deploy smoke
         shell: bash
