@@ -85,12 +85,12 @@ jobs:
           set -euo pipefail
 
           # 1) Read metric from model_report.json
-          TEST_R2="$(python -c "import json;print(json.load(open('artifacts/model_report.json'))['best_model']['test_r2'])")"
+          TEST_R2="$(python -c "import json; print(json.load(open('${ARTIFACTS_DIR}/model_report.json'))['best_model']['test_r2'])")"
           export TEST_R2
           echo "TEST_R2=$TEST_R2" >> "$GITHUB_ENV"
           echo "TEST_R2=${TEST_R2}"
 
-          # 2) Gate promotion (Tier 1: fixed threshold)
+          # 2) Gate promotion (fixed threshold)
           python - <<'PY'
           import os
           thr = float(os.getenv("PROMOTE_IF_TEST_R2_AT_LEAST", "0.10"))
@@ -99,6 +99,10 @@ jobs:
           if val < thr:
               raise SystemExit("Not promoting: metric below threshold.")
           PY
+
+          # 3) Write the promoted model URI to a well-known GCS location
+          echo "${RUN_URI}" | gcloud storage cp - "${MODEL_REGISTRY_URI}/promoted/latest_uri.txt"
+          echo "Promoted model URI written: ${RUN_URI}"
           
       - name: Rollout to STAGING (recommended)
         shell: bash
