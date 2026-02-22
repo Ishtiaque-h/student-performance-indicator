@@ -1,7 +1,9 @@
-# 🎓 Student Performance Predictor - End-to-End MLOps Pipeline
+# 🎓 Student Performance Predictor — End-to-End MLOps Pipeline
 
 [![CI](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/ci.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/ci.yml)
-[![CD - Deploy](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml)
+[![Staging Deploy](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml)
+[![CD Production](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/cd-cloudrun.yml/badge.svg?event=push)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/cd-cloudrun.yml)
+[![Retrain](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/retrain.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/retrain.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 A **production-grade machine learning system** that predicts student math scores based on demographic and educational factors. This project demonstrates end-to-end MLOps practices including automated retraining, quality gates, staged deployments, and cloud-native architecture.
@@ -12,44 +14,46 @@ A **production-grade machine learning system** that predicts student math scores
 
 ## 🎯 Project Highlights
 
-This isn't just a model - it's a **complete ML production system**:
+Focus isn't just a model — it's a **complete ML production system**:
 
 - ✅ **10+ ML models** with hyperparameter tuning (RandomizedSearch → GridSearch)
-- ✅ **Automated CI/CD** with GitHub Actions
+- ✅ **Automated CI/CD** with GitHub Actions (4 workflows)
 - ✅ **Staging + Production environments** with manual promotion gates
 - ✅ **Weekly automated retraining** with quality thresholds
+- ✅ **"Promote, don't retrain"** — production always gets the exact staged model
 - ✅ **FastAPI REST service** with dynamic schema validation
 - ✅ **Cloud-native deployment** on Google Cloud Run
 - ✅ **MLflow integration** for experiment tracking
 - ✅ **Docker containerization** with multi-stage builds
-- ✅ **Dataset-agnostic design** - change one file to use any dataset
+- ✅ **Workload Identity Federation** — no long-lived GCP credentials
+- ✅ **Dataset-agnostic design** — change one file to use any dataset
 
 ---
 
 ## 🌟 Key Differentiators
 
-What makes this project stand out:
+### **1. "Promote, Don't Retrain" Model Deployment**
+Production deployments never retrain from scratch. The model artifact is:
+1. Trained once in a controlled environment
+2. Validated against a quality gate (R²)
+3. Deployed to staging for human review
+4. Promoted to production **as the exact same binary** — no variance, no surprises
 
-### **1. Dataset-Agnostic Design**
+### **2. Dataset-Agnostic Design**
 - Change **one file** (`config.py`) to use a different dataset
 - API validation, preprocessing, and training adapt automatically
 - Validation logic reads from **trained preprocessor** (single source of truth)
 
-### **2. Production-Grade Testing**
+### **3. Production-Grade Testing**
 - Smoke tests focus on "does the whole pipeline run?"
 - Dynamic schema validation prevents invalid inputs
-- Tests work with **any dataset** (real data → synthetic fallback)
-
-### **3. Sophisticated Hyperparameter Tuning**
-- Two-stage approach: RandomizedSearch (broad) → GridSearch (refined)
-- Custom refinement strategies (window-based, log-scale)
-- Smart densification for sparse matrices
+- Post-deploy API smoke tests validate every production release
 
 ### **4. MLOps Best Practices**
 - Staged deployments (staging → manual review → production)
-- Quality gates (R² thresholds, health checks)
-- Artifact versioning (GCS + Git tags)
-- Automated retraining with human oversight
+- Quality gates (R² thresholds, artifact existence checks)
+- GCS model registry with versioned run index + promoted pointer
+- Automated retraining with human oversight before production
 
 ---
 
@@ -74,12 +78,12 @@ What makes this project stand out:
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│               GitHub Actions (CI/CD)                        │
+│               GitHub Actions (4 Workflows)                  │
 ├─────────────────────────────────────────────────────────────┤
-│  • CI: Lint, Format, Smoke Tests                            │
-│  • Staging: Auto-deploy on push to main                     │
-│  • Production: Tag-based deployment (manual)                │
-│  • Retrain: Weekly scheduled (Monday 7 AM UTC)              │
+│  ci.yml        │ Lint, Format, Smoke Tests (every PR/push)  │
+│  deploy.yml    │ Staging deploy (after CI passes on main)   │
+│  retrain.yml   │ Weekly retraining + staging rollout        │
+│  cd-cloudrun   │ Production deploy (on v* tag)              │
 └───────────────────────────┬─────────────────────────────────┘
                             │
                             ▼
@@ -87,19 +91,22 @@ What makes this project stand out:
 │     Google Cloud Storage (GCS)       │   Artifact Registry  │
 ├──────────────────────────────────────┼──────────────────────┤
 │ • Model artifacts (model.pkl)        │ • Docker images      │
-│ • Preprocessor (preprocessor.pkl)    │ • Tagged versions    │
-│ • MLflow experiments                 │                      │
+│ • Preprocessor (preprocessor.pkl)    │ • Tagged by SHA/ver  │
+│ • Run index (latest/<run_id>/)       │                      │
+│ • Promoted pointer (promoted/        │                      │
+│     latest_uri.txt)                  │                      │
+│ • MLflow experiment runs             │                      │
 └───────────────────────────┬──────────┴──────────────────────┘
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │            Google Cloud Run (Serverless)                    │
 ├─────────────────────────────────────────────────────────────┤
-│  Staging: student-performance-api-staging                   │
+│  Staging:    student-performance-api-staging                │
 │  Production: student-performance-api                        │
 │  • Auto-scaling (0→N instances)                             │
 │  • HTTPS endpoints                                          │
-│  • Health monitoring                                        │
+│  • Model loaded from GCS at startup (FORCE_MODEL_DOWNLOAD)  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -107,61 +114,106 @@ What makes this project stand out:
 
 ## 🔄 MLOps Pipeline
 
-### **Deployment Flow**
+### **Workflow 1 — CI (`ci.yml`)**
+
+Triggered on every pull request and every push to `main`.
 
 ```
-Developer Push → main branch
+PR / push to main
     ↓
-CI: Lint + Format + Smoke Tests (GitHub Actions)
+Lint (ruff) + Format check (black)
     ↓
-Train Model (10 models + hyperparameter tuning)
+Smoke tests (pytest -m smoke)
     ↓
-Build Docker Image (with artifacts)
-    ↓
-Deploy to STAGING (auto)
-    ↓
-[Manual Testing & Review]
-    ↓
-Create Release Tag (e.g., v3.3.0)
-    ↓
-Deploy to PRODUCTION (auto-triggered by tag)
-    ↓
-Post-Deploy Smoke Tests (health + predictions)
+✅ Pass → unblocks staging deploy
+❌ Fail → blocks merge + staging deploy
 ```
 
-### **Automated Retraining Flow**
+### **Workflow 2 — Staging Deploy (`deploy.yml`)**
+
+Triggered only after CI passes on `main` (via `workflow_run`).
 
 ```
-Schedule: Every Monday 7 AM UTC
+CI passes on main
     ↓
-Retrain all models with latest data
+Train model (all 10 models + hyperparameter tuning)
+    ↓
+Build & push Docker image (tagged with commit SHA)
+    ↓
+Deploy to Cloud Run STAGING
+```
+
+> This deploy is for **code changes**. The model is retrained fresh to validate the new code works end-to-end with a real model.
+
+### **Workflow 3 — Automated Retraining (`retrain.yml`)**
+
+Triggered every Monday at 07:00 UTC (or manually).
+
+```
+Schedule: Every Monday 07:00 UTC
+    ↓
+Train all models with latest data
+    ↓
+Sync MLflow run to GCS
     ↓
 Quality Gate: test_r2 >= 0.10
-    ├─ PASS → Deploy to Staging
-    └─ FAIL → Stop (notification sent)
+    ├─ FAIL → workflow stops (model discarded)
+    └─ PASS ↓
+Write promoted URI → GCS: promoted/latest_uri.txt
     ↓
-Manual Review: Check MLflow metrics
+Update Cloud Run STAGING with new model (hot-reload)
     ↓
-Manual Promotion: Create release tag if satisfied
-    ↓
-Production Deployment
+[Human reviews staging predictions & MLflow metrics]
 ```
 
-**Note on Scheduled Retraining:**
-> ❓ **Does retraining automatically update production?**
-> 
-> **No** - scheduled retraining follows a **safe deployment pattern**:
-> 1. ✅ Retraining happens automatically (every Monday)
-> 2. ✅ Quality gates ensure model meets minimum R² threshold
-> 3. ✅ New model is deployed to **staging** automatically
-> 4. ⏸️ **Manual review required** before production promotion
-> 5. ✅ Create release tag (e.g., `v3.3.1`) to deploy to production
->
-> This prevents untested models from reaching production and allows you to:
-> - Review MLflow metrics
-> - Test staging deployment
-> - Validate predictions look reasonable
-> - Control production release timing
+### **Workflow 4 — Production Deploy (`cd-cloudrun.yml`)**
+
+Triggered by pushing a `v*` tag (e.g. `v3.4.0`).
+
+```
+git tag v3.4.0 && git push origin v3.4.0
+    ↓
+Smoke tests (code quality gate)
+    ↓
+Read promoted/latest_uri.txt from GCS  ← exact model from staging
+    ↓
+Build & push Docker image (tagged with version)
+    ↓
+Verify model.pkl + preprocessor.pkl exist in GCS
+    ↓
+Deploy to Cloud Run PRODUCTION with promoted model URI
+    ↓
+Post-deploy smoke tests:
+    ├─ GET /health → must return 200
+    ├─ POST /predict (valid input) → must return 200 + prediction key
+    └─ POST /predict (missing field) → must return 422
+```
+
+> **Key principle**: No retraining happens here. Production gets the **exact same `.pkl` binary** that was validated on staging. The tag is a human approval gate, not a training trigger.
+
+---
+
+## 🔑 The "Promote, Don't Retrain" Pattern
+
+This is the most important MLOps design decision in this project:
+
+```
+❌ Naive approach (what most tutorials show):
+   push tag → retrain → deploy to prod
+   Problem: production model was never validated; training is non-deterministic
+
+✅ This project:
+   retrain → gate → staging → human review → promote same artifact → prod
+   Result: production gets the exact model you reviewed on staging
+```
+
+The hand-off is a simple GCS pointer:
+```
+gs://bucket/student-performance/promoted/latest_uri.txt
+→ contents: gs://bucket/student-performance/latest/20260222T070000Z-abc1234/
+```
+
+`retrain.yml` writes it. `cd-cloudrun.yml` reads it. One line. Fully auditable.
 
 ---
 
@@ -169,7 +221,7 @@ Production Deployment
 
 The `notebooks/` directory contains Jupyter notebooks documenting the data exploration process:
 
-- **EDA.ipynb**: 
+- **EDA_student_performance.ipynb**:
   - Dataset overview and statistics
   - Feature distributions and correlations
   - Missing value analysis
@@ -178,9 +230,9 @@ The `notebooks/` directory contains Jupyter notebooks documenting the data explo
 This analysis informed key decisions:
 - ✅ Dropping reading/writing scores to prevent data leakage
 - ✅ Using only categorical features (no numerical scaling needed)
-- ✅ Setting R² threshold at 0.10 (reflecting data characteristics)
+- ✅ Setting R² threshold at 0.10 (conservative — reflects limited predictive signal from 5 categorical features alone)
 
-[View EDA Notebook →](./notebooks/EDA.ipynb)
+[View EDA Notebook →](./notebooks/EDA_student_performance.ipynb)
 
 ---
 
@@ -190,7 +242,7 @@ This analysis informed key decisions:
 
 | Model | Description | Hyperparams Tuned |
 |-------|-------------|-------------------|
-| **Linear Regression** | Baseline | - |
+| **Linear Regression** | Baseline | — |
 | **Ridge** | L2 regularization | `alpha` |
 | **Lasso** | L1 regularization | `alpha` |
 | **KNN** | K-nearest neighbors | `n_neighbors`, `weights`, `p` |
@@ -205,23 +257,22 @@ This analysis informed key decisions:
 
 **Two-stage approach**:
 
-1. **Broad Search** (RandomizedSearchCV):
-   - 20 iterations per model
+1. **Broad Search** (RandomizedSearchCV, 25 iterations):
    - Wide parameter ranges
-   - Identifies promising regions
+   - Identifies promising regions quickly
 
-2. **Refined Search** (GridSearch):
+2. **Refined Search** (GridSearchCV):
    - Narrows around best params from stage 1
    - Custom refinement strategies:
-     - `float_log`: Multiplicative factors (e.g., 0.5x, 1x, 2x)
-     - `int_window`: Additive deltas (e.g., -50, 0, +50)
+     - `float_log`: Multiplicative factors (e.g., 0.5×, 1×, 2×)
+     - `int_window`: Additive deltas (e.g., −50, 0, +50)
      - `categorical`: Discrete choices
 
 ### **Model Selection**
 
-- **Scoring metric**: Negative MSE (5-fold CV)
-- **Selection criterion**: Prefers CV score over test R² (prevents overfitting)
-- **Quality gate**: Test R² ≥ 0.10 required for production promotion
+- **Scoring metric**: R² (5-fold CV)
+- **Selection criterion**: Prefers CV score over test R² (prevents overfitting to test set)
+- **Quality gate**: Test R² ≥ 0.10 required for staging promotion
 
 ### **Preprocessing**
 
@@ -235,7 +286,7 @@ Categorical Features:
   └─ Encoding: OneHotEncoder(handle_unknown='ignore')
 ```
 
-**Output**: Sparse matrix (memory-efficient) with automatic densification for models that require it (KNN, Decision Trees, Boosting models).
+Output: Sparse matrix (memory-efficient) with automatic densification for models that require dense input (KNN, Decision Trees, Boosting).
 
 ---
 
@@ -256,7 +307,7 @@ cd student-performance-indicator
 
 # Create virtual environment
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -e ".[dev,api,ml,mlops]"
@@ -301,14 +352,14 @@ curl -X POST http://localhost:8000/predict \
 ### **Run Tests**
 
 ```bash
-# Smoke tests
+# Smoke tests (fast, ~3 seconds)
 pytest -m smoke -v
 
 # All tests
 pytest -v
 
 # With coverage
-pytest --cov=student_performance
+pytest --cov=student_performance --cov-report=html
 ```
 
 ---
@@ -317,16 +368,16 @@ pytest --cov=student_performance
 
 ```
 student-performance-indicator/
-├── .github/workflows/          # CI/CD pipelines
-│   ├── ci.yml                  # Lint, format, tests
-│   ├── deploy.yml              # Staging deployment
-│   ├── cd-cloudrun.yml         # Production deployment
-│   └── retrain.yml             # Scheduled retraining
+├── .github/workflows/
+│   ├── ci.yml                  # Lint, format, smoke tests (every PR + main push)
+│   ├── deploy.yml              # Staging deploy (after CI passes)
+│   ├── cd-cloudrun.yml         # Production deploy (on v* tag, promote-don't-retrain)
+│   └── retrain.yml             # Weekly retraining + staging rollout
 ├── data/
 │   └── raw/stud.csv            # Source dataset
 ├── src/student_performance/
-│   ├── components/             # ML pipeline components
-│   │   ├── config.py           # Centralized configuration
+│   ├── components/
+│   │   ├── config.py           # Centralized configuration (change dataset here)
 │   │   ├── data_ingestion.py   # Data loading + splitting
 │   │   ├── data_transformation.py  # Preprocessing
 │   │   └── model_trainer.py    # Model training + tuning
@@ -337,26 +388,26 @@ student-performance-indicator/
 │   │   └── mlflow_logger.py    # MLflow integration
 │   ├── registry/
 │   │   └── gcs_registry.py     # GCS artifact management
-├── static/
-│   └── app.js                  # Frontend JavaScript (UI)
-├── templates/
-│   └── index.html              # HTML templates (UI)
 │   ├── api.py                  # FastAPI application
-│   ├── modeling.py             # evaluate_models implementation
-│   └── utils.py                # Utility functions
-│   └── logger.py               # Logging setup
-│   └── exception.py            # Custome error handling
-│   └── artifacts_gcs.py        # GCS downloads
+│   ├── modeling.py             # Model evaluation
+│   ├── artifacts_gcs.py        # GCS artifact download
+│   ├── utils.py                # Utility functions
+│   ├── logger.py               # Logging setup
+│   └── exception.py            # Custom error handling
+├── static/
+│   └── app.js                  # Frontend JavaScript
+├── templates/
+│   └── index.html              # Web UI template
 ├── scripts/
-│   └── train_and_publish.py    # CLI for training + publishing
+│   └── train_and_publish.py    # CLI: train + publish to GCS registry
 ├── tests/
-│   ├── test_smoke.py           # Dataset-agnostic smoke tests
+│   ├── test_smoke.py           # Dataset-agnostic end-to-end tests
 │   └── test_api_validation.py  # Dynamic schema validation tests
 ├── notebooks/
-│   ├── EDA_student_performance.ipynb   # Model EDA prep
-│   └── model_training.ipynb    # Model training prep
-├── Dockerfile                  # Multi-stage Docker build
-├── pyproject.toml              # Package configuration
+│   ├── EDA_student_performance.ipynb
+│   └── model_training.ipynb
+├── Dockerfile                  # Multi-stage build
+├── pyproject.toml              # Package + extras configuration
 └── README.md
 ```
 
@@ -373,11 +424,7 @@ CONFIG = PipelineConfig(
         target_col="math_score",
         drop_cols=["reading_score", "writing_score"]
     ),
-    split=SplitConfig(
-        test_size=0.2,
-        random_state=42,
-        shuffle=True
-    ),
+    split=SplitConfig(test_size=0.2, random_state=42, shuffle=True),
     tuning=TuningConfig(
         cv=5,
         scoring="r2",
@@ -392,7 +439,7 @@ CONFIG = PipelineConfig(
 )
 ```
 
-**To use a different dataset**: Update `CONFIG.dataset.data_rel_path`, `target_col`, and `drop_cols`.
+**To use a different dataset**: Update `data_rel_path`, `target_col`, and `drop_cols`. Everything else adapts automatically.
 
 ---
 
@@ -407,7 +454,7 @@ CONFIG = PipelineConfig(
 | `POST` | `/predict` | Single prediction (with dynamic validation) ✨ |
 | `POST` | `/predict_batch` | Batch predictions (with dynamic validation) ✨ |
 
-✨ = **Dynamic validation** - inputs validated against categories learned during training
+✨ = **Dynamic validation** — inputs validated against categories learned during training
 
 ### **Example Request**
 
@@ -425,88 +472,28 @@ curl -X POST https://student-performance-api-654581958038.us-central1.run.app/pr
 
 **Response**:
 ```json
-{
-  "prediction": 68.4
-}
+{ "prediction": 68.4 }
 ```
 
 ---
 
 ## 🔄 Dynamic Schema Validation
 
-### Design Philosophy
-
-This API uses **dynamic schema validation** - it validates incoming requests against the categories learned during training, not hard-coded values. This makes the entire pipeline **dataset-agnostic**.
+This API validates incoming requests against the **categories learned during training**, not hard-coded values. This makes the system fully dataset-agnostic.
 
 ### How It Works
 
-1. **Training Phase**:
-   ```python
-   # Preprocessor learns valid categories from data
-   OneHotEncoder().fit(["male", "female", ...])
-   ```
+1. **Training**: `OneHotEncoder` learns valid categories from data
+2. **API startup**: Loads preprocessor, extracts `encoder.categories_`
+3. **Request time**: Validates user input against learned categories
 
-2. **API Startup**:
-   ```python
-   # API loads preprocessor and extracts learned categories
-   preprocessor = load_object("artifacts/preprocessor.pkl")
-   valid_categories = preprocessor.categories_
-   ```
+### Example Error Responses
 
-3. **Request Validation**:
-   ```python
-   # Validates user input against learned categories
-   if user_value.lower() not in valid_categories:
-       raise ValueError(f"Invalid value. Expected one of: {valid_categories}")
-   ```
-
-### Benefits
-
-- ✅ **Single source of truth**: Validation logic comes from training data
-- ✅ **Dataset-agnostic**: Works with any tabular dataset
-- ✅ **Always in sync**: Impossible for API validation to diverge from model expectations
-- ✅ **User-friendly**: Case-insensitive + whitespace trimming
-- ✅ **Production-safe**: Rejects invalid inputs before they reach the model
-
-### Example Error Messages
-
-**Empty field:**
 ```json
-{
-  "detail": "Empty values not allowed for fields: ['gender']"
-}
+{ "detail": "Empty values not allowed for fields: ['gender']" }
+{ "detail": "Invalid value 'non-binary' for field 'gender'. Expected one of: female, male" }
+{ "detail": "Missing required fields: ['test_preparation_course']" }
 ```
-
-**Invalid category:**
-```json
-{
-  "detail": "Invalid value 'non-binary' for field 'gender'. Expected one of: female, male"
-}
-```
-
-**Missing field:**
-```json
-{
-  "detail": "Missing required fields: ['test_preparation_course']"
-}
-```
-
-### Using with a New Dataset
-
-Simply update `config.py` and retrain - the API adapts automatically:
-
-```python
-# config.py
-CONFIG = PipelineConfig(
-    dataset=DatasetConfig(
-        data_rel_path="data/raw/new_data.csv",
-        target_col="target_column",
-        drop_cols=["id", "timestamp"]
-    )
-)
-```
-
-**No API code changes needed!** 🎉
 
 ---
 
@@ -514,31 +501,38 @@ CONFIG = PipelineConfig(
 
 ### **Infrastructure**
 
-- **Platform**: Google Cloud Run (serverless)
-- **Authentication**: Workload Identity Federation (no service account keys!)
-- **Artifact Storage**: Google Cloud Storage
-- **Container Registry**: Google Artifact Registry
-- **Secrets Management**: GitHub Secrets
+| Component | Technology |
+|-----------|------------|
+| Serving platform | Google Cloud Run (serverless) |
+| Authentication | Workload Identity Federation (no SA keys) |
+| Artifact storage | Google Cloud Storage |
+| Container registry | Google Artifact Registry |
+| Secrets | GitHub Secrets + Environments |
+| Experiment tracking | MLflow → GCS |
 
 ### **Deployment Process**
 
-1. **Manual Promotion** (current):
-   ```bash
-   # After reviewing staging deployment
-   git tag v3.3.0
-   git push origin v3.3.0
-   ```
+```bash
+# 1. Retraining runs automatically every Monday
+#    → staging is updated automatically
 
-2. **Automated CI/CD**:
-   - Tag push triggers `cd-cloudrun.yml`
-   - Trains model with tagged code
-   - Builds Docker image
-   - Deploys to Cloud Run (production)
-   - Runs post-deploy smoke tests
+# 2. Review staging
+open https://student-performance-api-staging-....run.app
 
-3. **Quality Gates**:
-   - Pre-deployment: R² ≥ 0.10
-   - Post-deployment: Health check + prediction validation
+# 3. Promote to production (triggers cd-cloudrun.yml)
+git tag v3.4.0
+git push origin v3.4.0
+```
+
+### **Quality Gates**
+
+| Gate | Where | What |
+|------|-------|------|
+| Lint + format | CI | Code quality before any deploy |
+| Smoke tests (code) | CI + CD | Pipeline runs end-to-end |
+| R² ≥ 0.10 | `retrain.yml` | Model quality before staging |
+| Artifact existence | `cd-cloudrun.yml` | `model.pkl` + `preprocessor.pkl` in GCS |
+| Post-deploy smoke | `cd-cloudrun.yml` | Live `/health` + `/predict` + 422 check |
 
 ---
 
@@ -547,62 +541,38 @@ CONFIG = PipelineConfig(
 ### **Current**
 
 - ✅ Post-deploy smoke tests (health + prediction validation)
-- ✅ MLflow experiment tracking
-- ✅ Artifact versioning (GCS + tags)
+- ✅ MLflow experiment tracking (synced to GCS per run)
+- ✅ Artifact versioning (GCS run index + promoted pointer)
+- ✅ Docker image versioning (SHA for staging, semver for production)
 - ✅ Deployment logs (Cloud Run)
 
 ### **Future Enhancements**
 
 - [ ] Data drift detection
-- [ ] Model performance monitoring
+- [ ] Model performance monitoring (production predictions vs. ground truth)
 - [ ] Cloud Monitoring alerts
-- [ ] A/B testing framework
-- [ ] Gradual rollouts (canary deployments)
+- [ ] A/B testing / canary deployments
+- [ ] Slack/email notifications on retrain gate failure
 
 ---
 
 ## 🧪 Testing Strategy
 
-### **Smoke Tests** 
-
-Our smoke tests are **fully dataset-agnostic**:
-
-```bash
-pytest -m smoke -v
-```
-
-**Design Philosophy:**
-- **Purpose**: Validate pipeline runs end-to-end, NOT model quality
-- **Focus**: Structural correctness (artifacts created, predictions deterministic)
-- **Data strategy**: Prefer real data sampling → fall back to synthetic with learnable patterns
-- **Speed**: Complete in ~3 seconds using fast Ridge model
-- **R² threshold**: `-10.0 to 1.0` (validates it's a number, not model accuracy)
-
-**Why lenient R² thresholds?**
-> With the student dataset, R² can be **legitimately negative** when we drop correlated features (reading/writing scores) to prevent data leakage. Smoke tests validate the **pipeline works**, not that the **model is good**.
-
-| Test Type | Coverage | When | Purpose |
-|-----------|----------|------|---------|
-| **Smoke Tests** | End-to-end pipeline | Every PR + deployment | Does it run? |
-| **API Validation Tests** | Dynamic schema validation | Every commit | Are inputs validated? |
-| **Linting** | Code quality (ruff) | Every commit | Code style |
-| **Formatting** | Code style (black) | Every commit | Consistent formatting |
-| **Post-Deploy** | Live API validation | After production deploy | Is deployment healthy? |
+| Test Type | Coverage | Trigger | Purpose |
+|-----------|----------|---------|---------|
+| **Smoke tests** | End-to-end pipeline | Every PR + push | Does the pipeline run? |
+| **API validation** | Dynamic schema | Every commit | Are inputs validated? |
+| **Linting (ruff)** | Code quality | Every commit | Style + correctness |
+| **Formatting (black)** | Code style | Every commit | Consistent formatting |
+| **Post-deploy smoke** | Live API | After production deploy | Is the deployment healthy? |
 
 ### **Running Tests**
 
 ```bash
-# Run all tests
-pytest -v
-
-# Run only smoke tests (fast)
-pytest -m smoke -v
-
-# Run with coverage report
-pytest --cov=student_performance --cov-report=html
-
-# Run API validation tests
-pytest tests/test_api_validation.py -v
+pytest -m smoke -v                              # fast smoke tests
+pytest -v                                       # all tests
+pytest --cov=student_performance --cov-report=html  # with coverage
+pytest tests/test_api_validation.py -v          # schema validation only
 ```
 
 ---
@@ -612,16 +582,16 @@ pytest tests/test_api_validation.py -v
 This is a portfolio project, but feedback is welcome!
 
 1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit: `git commit -m 'Add my feature'`
+4. Push: `git push origin feature/my-feature`
 5. Open a Pull Request
 
 ---
 
 ## 📝 License
 
-MIT License - see [LICENSE](LICENSE) file.
+MIT License — see [LICENSE](LICENSE) file.
 
 ---
 
@@ -635,14 +605,13 @@ MIT License - see [LICENSE](LICENSE) file.
 
 ## 🙏 Acknowledgments
 
-- Dataset: [Kaggle - Students Performance in Exams](https://www.kaggle.com/datasets/spscientist/students-performance-in-exams)
+- Dataset: [Kaggle — Students Performance in Exams](https://www.kaggle.com/datasets/spscientist/students-performance-in-exams)
 - Inspiration: Production ML systems at companies like Netflix, Uber, Airbnb
 - Tools: FastAPI, scikit-learn, XGBoost, CatBoost, MLflow, GitHub Actions, Google Cloud
 
 ---
 
-**Related Projects**:
-- [Boston House Price Prediction](https://github.com/Ishtiaque-h/boston-house-pricing.git)
+**Related Projects**: [Boston House Price Prediction](https://github.com/Ishtiaque-h/boston-house-pricing.git)
 
 ---
 
