@@ -84,23 +84,25 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 1) Read metric from model_report.json
-          REPORT_PATH="${GITHUB_WORKSPACE}/artifacts/model_report.json"
-          TEST_R2="$(python -c "import json; print(json.load(open('${REPORT_PATH}'))['best_model']['test_r2'])")"
-          echo "TEST_R2=$TEST_R2" >> "$GITHUB_ENV"
-          echo "TEST_R2=${TEST_R2}"
+          # Read metric and gate — all in one Python block to avoid shell quoting issues
+          python - <<PY
+          import json, os, sys
 
-          # 2) Gate promotion (fixed threshold)
-          python - <<'PY'
-          import os
-          thr = float(os.getenv("PROMOTE_IF_TEST_R2_AT_LEAST", "0.10"))
-          val = float(os.environ["TEST_R2"])
-          print(f"threshold={thr}, test_r2={val}")
-          if val < thr:
-              raise SystemExit("Not promoting: metric below threshold.")
+          report_path = os.path.join(os.environ["GITHUB_WORKSPACE"], "artifacts", "model_report.json")
+          report = json.load(open(report_path))
+          test_r2 = report["best_model"]["test_r2"]
+          threshold = float(os.environ.get("PROMOTE_IF_TEST_R2_AT_LEAST", "0.10"))
+
+          print(f"test_r2={test_r2}, threshold={threshold}")
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"TEST_R2={test_r2}\n")
+
+          if test_r2 < threshold:
+              sys.exit(f"Not promoting: test_r2={test_r2} < threshold={threshold}")
           PY
 
-          # 3) Write the promoted model URI to a well-known GCS location
+          # Write the promoted model URI to GCS
           echo "${RUN_URI}" | gcloud storage cp - "${MODEL_REGISTRY_URI}/promoted/latest_uri.txt"
           echo "Promoted model URI written: ${RUN_URI}"
           
