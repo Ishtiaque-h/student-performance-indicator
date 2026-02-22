@@ -157,19 +157,35 @@ def home(request: Request):
 @app.get("/schema")
 def schema(request: Request) -> Dict[str, Any]:
     """
-    Generic schema endpoint (helps UI + external clients).
-    Uses the trained preprocessor to expose required input columns.
+    Returns feature names + valid categories (from trained OHE).
+    Used by the UI to render dropdowns dynamically.
     """
     pipeline: PredictPipeline = request.app.state.pipeline
-    preprocessor, _ = pipeline._load_artifacts()  # uses your existing artifact loader
+    preprocessor, _ = pipeline._load_artifacts()
 
     cols = getattr(preprocessor, "feature_names_in_", None)
     if cols is None:
         return {"features": [], "note": "preprocessor has no feature_names_in_"}
 
-    # Minimal schema info; UI can render text inputs for everything.
-    return {"features": [{"name": c, "type": "text"} for c in list(cols)]}
+    # Build a lookup: column name → sorted list of valid categories
+    cat_lookup: dict = {}
+    if hasattr(preprocessor, "transformers_"):
+        for transformer_name, transformer, feature_cols in preprocessor.transformers_:
+            if transformer_name == "categorical" and hasattr(
+                transformer.named_steps.get("onehot", {}), "categories_"
+            ):
+                ohe = transformer.named_steps["onehot"]
+                for i, col in enumerate(feature_cols):
+                    cat_lookup[col] = sorted(str(c) for c in ohe.categories_[i])
 
+    features = []
+    for col in list(cols):
+        entry: dict = {"name": col, "type": "text"}
+        if col in cat_lookup:
+            entry["categories"] = cat_lookup[col]  # ← this is what the JS needs
+        features.append(entry)
+
+    return {"features": features}
 
 @app.get("/meta")
 def meta(request: Request) -> dict:
