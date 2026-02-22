@@ -94,6 +94,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"  # e.g. v0.2.0
           IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/${SERVICE}:${TAG}"
           echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"   # ← add this line
           docker build --no-cache -t "${IMAGE_URI}" .
           docker push "${IMAGE_URI}"
 
