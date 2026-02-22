@@ -85,8 +85,8 @@ jobs:
           set -euo pipefail
 
           # 1) Read metric from model_report.json
-          TEST_R2="$(python -c "import json; print(json.load(open('${ARTIFACTS_DIR}/model_report.json'))['best_model']['test_r2'])")"
-          export TEST_R2
+          REPORT_PATH="${GITHUB_WORKSPACE}/artifacts/model_report.json"
+          TEST_R2="$(python -c "import json; print(json.load(open('${REPORT_PATH}'))['best_model']['test_r2'])")"
           echo "TEST_R2=$TEST_R2" >> "$GITHUB_ENV"
           echo "TEST_R2=${TEST_R2}"
 
