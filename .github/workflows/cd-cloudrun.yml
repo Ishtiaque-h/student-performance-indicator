@@ -110,18 +110,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          : "${MODEL_REGISTRY_URI:?MODEL_REGISTRY_URI must be set to base, e.g. gs://freshmoon39/student-performance}"
+          : "${MODEL_REGISTRY_URI:?MODEL_REGISTRY_URI must be set}"
+          : "${ARTIFACTS_URI:?ARTIFACTS_URI must be set — was promoted model URI read correctly?}"
 
-          TAG="${GITHUB_REF_NAME}"   # v*
-          ARTIFACTS_URI="${MODEL_REGISTRY_URI}/${TAG}"
-          
           echo "Deploying with ARTIFACTS_URI=${ARTIFACTS_URI}"
 
-          # Fail fast: do not deploy if release artifacts aren't present exactly where serving expects
+          # Fail fast: do not deploy if promoted artifacts aren't present
           gcloud storage ls "${ARTIFACTS_URI}/model.pkl" >/dev/null
           gcloud storage ls "${ARTIFACTS_URI}/preprocessor.pkl" >/dev/null
 
-          # Build env vars string
+          # Build env vars string — use ARTIFACTS_URI from the promoted pointer
           ENV_VARS="ARTIFACTS_DIR=/tmp/artifacts,GCS_ARTIFACTS_URI=${ARTIFACTS_URI},FORCE_MODEL_DOWNLOAD=1"
           
           echo "Setting environment variables: ${ENV_VARS}"
