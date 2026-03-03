@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - "aws-deployment"  # branch for AWS staging deployments; adjust as needed
 
 jobs:
   test:
