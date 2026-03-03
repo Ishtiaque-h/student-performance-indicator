@@ -8,9 +8,20 @@ from typing import List, Optional
 
 from student_performance.pipeline.train_pipeline import TrainPipeline
 from student_performance.utils import find_project_root
-from student_performance.registry.gcs_registry import upload_run_index, upload_release
 from student_performance.components.config import CONFIG
 
+def _get_registry_functions(registry_uri: str):
+    """Return the appropriate upload functions based on URI scheme."""
+    if registry_uri.startswith("gs://"):
+        from student_performance.registry.gcs_registry import upload_run_index, upload_release
+        return upload_run_index, upload_release
+    elif registry_uri.startswith("s3://"):
+        from student_performance.registry.s3_registry import upload_run_index, upload_release
+        return upload_run_index, upload_release
+    else:
+        raise ValueError(
+            f"--registry-uri must start with gs:// (GCP) or s3:// (AWS). Got: {registry_uri}"
+        )
 
 def make_run_id() -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -20,8 +31,10 @@ def make_run_id() -> str:
 
 def _normalize_registry_uri(uri: str) -> str:
     uri = uri.strip().rstrip("/")
-    if not uri.startswith("gs://"):
-        raise ValueError(f"--registry-uri must start with gs:// (got {uri})")
+    if not uri.startswith("gs://") and not uri.startswith("s3://"):
+        raise ValueError(
+            f"--registry-uri must start with gs:// (GCP) or s3:// (AWS). Got: {uri}"
+        )
     return uri
 
 
@@ -57,6 +70,7 @@ def main() -> None:
 
     registry_uri = _normalize_registry_uri(args.registry_uri)
     release_tag = args.release_tag.strip()
+    upload_run_index, upload_release = _get_registry_functions(registry_uri)
 
     if not args.index_latest and not release_tag:
         raise ValueError("Nothing to do: set --index-latest and/or --release-tag")

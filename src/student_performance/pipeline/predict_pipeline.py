@@ -12,8 +12,17 @@ from student_performance.exception import CustomException
 from student_performance.logger import logging
 from student_performance.utils import find_project_root, load_object
 from student_performance.components.config import CONFIG
-from student_performance.artifacts_gcs import download_artifacts_from_gcs
 
+def _download_artifacts(uri: str, local_dir: Path, filenames: list) -> None:
+    """Dispatch artifact download to the correct backend based on URI scheme."""
+    if uri.startswith("gs://"):
+        from student_performance.artifacts_gcs import download_artifacts_from_gcs
+        download_artifacts_from_gcs(gcs_uri=uri, local_dir=local_dir, filenames=filenames)
+    elif uri.startswith("s3://"):
+        from student_performance.artifacts_s3 import download_artifacts_from_s3
+        download_artifacts_from_s3(s3_uri=uri, local_dir=local_dir, filenames=filenames)
+    else:
+        raise ValueError(f"Unsupported artifact URI scheme: {uri}")
 
 def _env_flag(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -57,7 +66,6 @@ class PredictPipeline:
     def _ensure_artifacts(self) -> None:
         force = _env_flag("FORCE_MODEL_DOWNLOAD", "0")
 
-        # Only the files required for serving
         required = [
             CONFIG.artifacts.preprocessor_name,
             CONFIG.artifacts.model_name,
@@ -67,33 +75,32 @@ class PredictPipeline:
 
         local_ok = all((self.config.artifacts_dir / f).exists() for f in required)
 
-        # If artifacts exist locally and we are not forcing a download, do nothing.
         if local_ok and not force:
             return
 
-        # Resolve GCS URI (new preferred var first, then legacy fallback)
-        gcs_uri = (
-            os.getenv("GCS_ARTIFACTS_URI", "").strip()
-            or os.getenv("MODEL_REGISTRY_URI", "").strip()
+        # Resolve artifact URI — support both GCS and S3 env vars
+        artifact_uri = (
+            os.getenv("GCS_ARTIFACTS_URI", "").strip()   # GCP Cloud Run sets this
+            or os.getenv("S3_ARTIFACTS_URI", "").strip()  # AWS ECS sets this
+            or os.getenv("MODEL_REGISTRY_URI", "").strip() # legacy fallback
         )
 
-        # If no GCS URI is provided:
-        # - If local artifacts exist, fall back to local (keeps tests/dev working)
-        # - If local artifacts don't exist, error
-        if not gcs_uri:
+        if not artifact_uri:
             if local_ok:
                 logging.warning(
-                    "FORCE_MODEL_DOWNLOAD is set but no GCS URI provided; using local artifacts."
+                    "FORCE_MODEL_DOWNLOAD is set but no artifact URI provided; using local artifacts."
                 )
                 return
             raise FileNotFoundError(
-                f"Artifacts not found locally in {self.config.artifacts_dir} and GCS_ARTIFACTS_URI is not set."
+                f"Artifacts not found locally in {self.config.artifacts_dir} "
+                "and neither GCS_ARTIFACTS_URI nor S3_ARTIFACTS_URI is set."
             )
 
         self.config.artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         logging.info(
-            f"Downloading required artifacts from {gcs_uri} -> {self.config.artifacts_dir} (force={force})"
+            f"Downloading required artifacts from {artifact_uri} -> "
+            f"{self.config.artifacts_dir} (force={force})"
         )
 
         if force:
@@ -102,18 +109,14 @@ class PredictPipeline:
                 if p.exists():
                     p.unlink()
 
-        download_artifacts_from_gcs(
-            gcs_uri=gcs_uri,
-            local_dir=self.config.artifacts_dir,
-            filenames=required,
-        )
+        _download_artifacts(artifact_uri, self.config.artifacts_dir, required)
 
         missing = [f for f in required if not (self.config.artifacts_dir / f).exists()]
         if missing:
             raise FileNotFoundError(
-                f"Downloaded from {gcs_uri} but missing required files: {missing}"
+                f"Downloaded from {artifact_uri} but missing required files: {missing}"
             )
-
+        
     def _load_artifacts(self) -> Tuple[Any, Any]:
         # Fast path: already loaded in memory
         if self._preprocessor is not None and self._model is not None:

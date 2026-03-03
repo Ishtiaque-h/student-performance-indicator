@@ -198,6 +198,7 @@ def meta(request: Request) -> dict:
         "model_path": str(pipeline.config.model_path),
         "preprocessor_path": str(pipeline.config.preprocessor_path),
         "GCS_ARTIFACTS_URI": os.getenv("GCS_ARTIFACTS_URI"),
+        "S3_ARTIFACTS_URI": os.getenv("S3_ARTIFACTS_URI"),
         "MODEL_REGISTRY_URI": os.getenv("MODEL_REGISTRY_URI"),
         "FORCE_MODEL_DOWNLOAD": os.getenv("FORCE_MODEL_DOWNLOAD"),
     }

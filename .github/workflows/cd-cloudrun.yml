@@ -3,7 +3,8 @@ name: CD - Deploy to Cloud Run (tag)
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]*"  # only trigger on version tags, e.g. v0.1.0; adjust pattern as needed
+      - "!aws-v*"  # explicitely exclude AWS-specific tags
   workflow_dispatch:
 
 permissions:

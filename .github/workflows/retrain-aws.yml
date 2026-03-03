@@ -1,0 +1,126 @@
+name: Retrain and Rollout - AWS
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"  # every Monday 07:00 UTC
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }}       # s3://bucket/student-performance
+  MLFLOW_S3_URI: ${{ vars.MLFLOW_S3_URI }}                # s3://bucket/mlflow/student-performance
+  ARTIFACTS_DIR: /tmp/artifacts
+  MLFLOW_EXPERIMENT_NAME: student-performance
+  MLFLOW_DIR: /tmp/mlruns
+  MLFLOW_TRACKING_URI: file:///tmp/mlruns
+  PROMOTE_IF_TEST_R2_AT_LEAST: "0.10"
+
+jobs:
+  retrain:
+    environment: staging-aws
+    runs-on: ubuntu-latest
+    env:
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # AWS OIDC auth — equivalent of GCP Workload Identity Federation
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[all]"
+
+      - name: Prepare run directories
+        run: mkdir -p "$MLFLOW_DIR" "$ARTIFACTS_DIR"
+
+      - name: Train + publish artifacts to S3
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python scripts/train_and_publish.py \
+            --registry-uri "${MODEL_REGISTRY_URI}" \
+            --index-latest | tee publish.out
+
+          RUN_ID="$(grep '^RUN_ID=' publish.out | cut -d= -f2)"
+          RUN_URI="$(grep '^RUN_URI=' publish.out | cut -d= -f2)"
+
+          echo "RUN_ID=${RUN_ID}" >> "$GITHUB_ENV"
+          echo "RUN_URI=${RUN_URI}" >> "$GITHUB_ENV"
+          echo "RUN_ID=${RUN_ID}"
+          echo "RUN_URI=${RUN_URI}"
+
+      # Sync MLflow runs to S3 (equivalent of `gcloud storage rsync` to GCS)
+      - name: Sync MLflow runs to S3
+        run: |
+          aws s3 sync "${MLFLOW_DIR}" "${MLFLOW_S3_URI}/${RUN_ID}"
+
+      - name: Gate and promote model
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python - <<PY
+          import json, os, sys
+
+          report_path = os.path.join(os.environ["GITHUB_WORKSPACE"], "artifacts", "model_report.json")
+          report = json.load(open(report_path))
+          test_r2 = report["best_model"]["test_r2"]
+          threshold = float(os.environ.get("PROMOTE_IF_TEST_R2_AT_LEAST", "0.10"))
+
+          print(f"test_r2={test_r2}, threshold={threshold}")
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"TEST_R2={test_r2}\n")
+
+          if test_r2 < threshold:
+              sys.exit(f"Not promoting: test_r2={test_r2} < threshold={threshold}")
+          PY
+
+          # Write promoted URI pointer to S3 (equivalent of `gcloud storage cp` to GCS)
+          python - <<PY
+          import boto3, os
+          uri = os.environ["MODEL_REGISTRY_URI"].rstrip("/")
+          run_uri = os.environ["RUN_URI"]
+
+          # Parse s3://bucket/prefix
+          rest = uri[5:]
+          bucket, _, prefix = rest.partition("/")
+          key = f"{prefix}/promoted/latest_uri.txt" if prefix else "promoted/latest_uri.txt"
+
+          boto3.client("s3").put_object(Bucket=bucket, Key=key, Body=run_uri.encode())
+          print(f"Promoted model URI written to s3://{bucket}/{key}: {run_uri}")
+          PY
+
+      # Update ECS service with new model URI env var (equivalent of `gcloud run services update`)
+      - name: Rollout to ECS Staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Updating ECS service ${ECS_SERVICE} with new model URI: ${RUN_URI}"
+
+          # Force a new deployment with updated environment variable
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --force-new-deployment \
+            --region "${AWS_REGION}"
+
+          echo "ECS service update triggered successfully"

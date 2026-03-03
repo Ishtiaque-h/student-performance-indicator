@@ -19,9 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml README.md LICENSE /build/
 COPY src /build/src
 
+ARG INSTALL_EXTRAS="api"
+
 # Install to user site-packages (easier to copy to final stage)
 RUN pip install --user --no-cache-dir --upgrade pip \
- && pip install --user --no-cache-dir ".[api]"
+ && pip install --user --no-cache-dir ".[${INSTALL_EXTRAS}]"
 
 # ============================================================
 # Stage 2: Runtime - Minimal production image

@@ -1,0 +1,140 @@
+name: CD - Deploy to ECS Fargate (tag) - AWS
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install (for tests)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[api,dev]"
+
+      - name: Run smoke tests
+        run: pytest -m smoke -q
+
+  deploy:
+    environment: production-aws
+    needs: [smoke]
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER_PROD }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE_PROD }}
+      ECS_TASK_DEFINITION: ${{ vars.ECS_TASK_DEFINITION_PROD }}
+      CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
+      MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[api]"
+
+      # Read promoted URI from S3 (equivalent of `gcloud storage cat` from GCS)
+      - name: Read promoted model URI from S3
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python - <<PY
+          import boto3, os, sys
+
+          uri = os.environ["MODEL_REGISTRY_URI"].rstrip("/")
+          rest = uri[5:]
+          bucket, _, prefix = rest.partition("/")
+          key = f"{prefix}/promoted/latest_uri.txt" if prefix else "promoted/latest_uri.txt"
+        
+          from botocore.exceptions import ClientError
+          try:
+              resp = boto3.client("s3").get_object(Bucket=bucket, Key=key)
+              promoted_uri = resp["Body"].read().decode().strip()
+          except ClientError as e:
+              if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
+                  sys.exit("ERROR: No promoted model URI found. Run retrain workflow first.")
+              raise
+
+          if not promoted_uri:
+              sys.exit("ERROR: Promoted URI is empty.")
+
+          print(f"Promoting model: {promoted_uri}")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"ARTIFACTS_URI={promoted_uri}\n")
+          PY
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push image to ECR
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"  # e.g. v0.2.0
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
+          docker build --no-cache -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Update image in ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.IMAGE_URI }}
+          environment-variables: |
+            S3_ARTIFACTS_URI=${{ env.ARTIFACTS_URI }}
+            FORCE_MODEL_DOWNLOAD=1
+            ARTIFACTS_DIR=/tmp/artifacts
+
+      - name: Deploy to ECS Fargate (Production)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Deployment complete
+        run: echo "Production deployment complete — ${{ env.IMAGE_URI }}"
