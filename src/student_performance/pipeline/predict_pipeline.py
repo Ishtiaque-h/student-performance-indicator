@@ -13,16 +13,22 @@ from student_performance.logger import logging
 from student_performance.utils import find_project_root, load_object
 from student_performance.components.config import CONFIG
 
+
 def _download_artifacts(uri: str, local_dir: Path, filenames: list) -> None:
     """Dispatch artifact download to the correct backend based on URI scheme."""
     if uri.startswith("gs://"):
         from student_performance.artifacts_gcs import download_artifacts_from_gcs
-        download_artifacts_from_gcs(gcs_uri=uri, local_dir=local_dir, filenames=filenames)
+
+        download_artifacts_from_gcs(
+            gcs_uri=uri, local_dir=local_dir, filenames=filenames
+        )
     elif uri.startswith("s3://"):
         from student_performance.artifacts_s3 import download_artifacts_from_s3
+
         download_artifacts_from_s3(s3_uri=uri, local_dir=local_dir, filenames=filenames)
     else:
         raise ValueError(f"Unsupported artifact URI scheme: {uri}")
+
 
 def _env_flag(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -80,9 +86,9 @@ class PredictPipeline:
 
         # Resolve artifact URI — support both GCS and S3 env vars
         artifact_uri = (
-            os.getenv("GCS_ARTIFACTS_URI", "").strip()   # GCP Cloud Run sets this
+            os.getenv("GCS_ARTIFACTS_URI", "").strip()  # GCP Cloud Run sets this
             or os.getenv("S3_ARTIFACTS_URI", "").strip()  # AWS ECS sets this
-            or os.getenv("MODEL_REGISTRY_URI", "").strip() # legacy fallback
+            or os.getenv("MODEL_REGISTRY_URI", "").strip()  # legacy fallback
         )
 
         if not artifact_uri:
@@ -116,7 +122,7 @@ class PredictPipeline:
             raise FileNotFoundError(
                 f"Downloaded from {artifact_uri} but missing required files: {missing}"
             )
-        
+
     def _load_artifacts(self) -> Tuple[Any, Any]:
         # Fast path: already loaded in memory
         if self._preprocessor is not None and self._model is not None:
