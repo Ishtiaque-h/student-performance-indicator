@@ -3,7 +3,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: ["main"]
+    branches:
+      - main
+      - "aws-deployment"  # branch for AWS staging deployments; adjust as needed
 
 jobs:
   test:
