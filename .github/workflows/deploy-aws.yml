@@ -1,12 +1,10 @@
 name: Deploy to ECS Fargate (staging) - AWS
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types:
-      - completed
+  push:
     branches:
-      - aws-deployment
+      - "aws-deployment"    # ← triggers directly on every push to this branch
+  workflow_dispatch:        # ← also allows manual trigger from Actions tab
 
 permissions:
   contents: read
@@ -14,7 +12,6 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     environment: staging-aws
     runs-on: ubuntu-latest
     env:
