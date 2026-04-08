@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+from sklearn.dummy import DummyRegressor
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
@@ -144,6 +145,9 @@ class ModelTrainer:
             y_test = np.asarray(y_test).ravel()
 
             models: Dict[str, Any] = {
+                # Baseline: a model that always predicts the mean.
+                # Any real model must beat this to be considered useful.
+                "Dummy": DummyRegressor(strategy="mean"),
                 "LinearRegression": LinearRegression(),
                 "Ridge": Ridge(random_state=42),
                 "Lasso": Lasso(random_state=42, max_iter=10000),
