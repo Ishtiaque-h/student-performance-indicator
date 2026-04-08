@@ -16,15 +16,28 @@ class DatasetConfig:
       - where raw data lives
       - what the target column is
       - which columns are excluded from features (drop_cols)
+
+    Deployment scenario
+    -------------------
+    This model is used at the **point of enrolment** — before any exams
+    have been taken.  Only demographic and administrative information is
+    available at that time (gender, race/ethnicity, parental education,
+    lunch programme, test-prep enrolment).
+
+    reading_score and writing_score would be perfect predictors of
+    math_score (they are all measured on the same sitting), but they are
+    NOT available at inference time in the target deployment scenario —
+    including them would constitute target leakage.  They are therefore
+    listed in drop_cols so they are excluded from both training features
+    and prediction inputs.
     """
 
     data_rel_path: Path = Path("data/raw/stud.csv")
 
     target_col: str = "math_score"
 
-    # Columns you want to exclude from training/prediction features.
-    # (Example: if you treat reading/writing as leakage or you intentionally
-    # want to predict math without them.)
+    # Columns excluded from training features because they are not
+    # available at prediction time (see deployment scenario above).
     drop_cols: List[str] = field(
         default_factory=lambda: ["reading_score", "writing_score"]
     )
