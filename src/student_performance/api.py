@@ -218,6 +218,8 @@ def model_info(request: Request) -> dict:
                 "best_model": report.get("best_model", {}),
                 "trained_at": report.get("best_model", {}).get("timestamp", "unknown"),
                 "test_r2": report.get("best_model", {}).get("test_r2"),
+                "test_mae": report.get("best_model", {}).get("test_mae"),
+                "test_rmse": report.get("best_model", {}).get("test_rmse"),
             }
     except Exception:
         pass

@@ -256,6 +256,8 @@ def test_end_to_end_smoke(fake_repo: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert best_model_name in report["models"]
     assert "best_model" in report
     assert "test_r2" in report["best_model"]
+    assert "test_mae" in report["best_model"]
+    assert "test_rmse" in report["best_model"]
 
     # R² can be negative for poorly correlated data - that's OK for smoke test
     # We just want to ensure it's a valid number
