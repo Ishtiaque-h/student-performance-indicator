@@ -24,6 +24,7 @@ class PredictPipelineConfig:
     artifacts_dir: Path
     preprocessor_path: Path
     model_path: Path
+    pipeline_path: Path
     report_path: Path
     ingestion_meta_path: Path
 
@@ -46,6 +47,7 @@ class PredictPipeline:
             artifacts_dir=artifacts_dir,
             preprocessor_path=artifacts_dir / CONFIG.artifacts.preprocessor_name,
             model_path=artifacts_dir / CONFIG.artifacts.model_name,
+            pipeline_path=artifacts_dir / CONFIG.artifacts.pipeline_name,
             report_path=artifacts_dir / "model_report.json",
             ingestion_meta_path=artifacts_dir / "ingestion_meta.json",
         )
@@ -53,6 +55,7 @@ class PredictPipeline:
         # in-memory cache
         self._preprocessor: Any = None
         self._model: Any = None
+        self._pipeline: Any = None
 
     def _ensure_artifacts(self) -> None:
         force = _env_flag("FORCE_MODEL_DOWNLOAD", "0")
@@ -61,6 +64,7 @@ class PredictPipeline:
         required = [
             CONFIG.artifacts.preprocessor_name,
             CONFIG.artifacts.model_name,
+            CONFIG.artifacts.pipeline_name,
             "model_report.json",
             "ingestion_meta.json",
         ]
@@ -126,8 +130,23 @@ class PredictPipeline:
 
             self._ensure_artifacts()
 
-            self._preprocessor = load_object(str(self.config.preprocessor_path))
-            self._model = load_object(str(self.config.model_path))
+            # Load the combined inference pipeline if available (preferred).
+            # Fall back to loading preprocessor + model separately for
+            # backwards-compatibility with older artifact sets.
+            if self.config.pipeline_path.exists():
+                self._pipeline = load_object(str(self.config.pipeline_path))
+                # Extract steps so the schema endpoint can still inspect the
+                # fitted ColumnTransformer directly via _preprocessor.
+                self._preprocessor = self._pipeline.named_steps["preprocessor"]
+                self._model = self._pipeline.named_steps["model"]
+            else:
+                logging.warning(
+                    "pipeline.pkl not found; falling back to separate preprocessor.pkl "
+                    "and model.pkl artifacts.  Re-train to generate a unified pipeline."
+                )
+                self._preprocessor = load_object(str(self.config.preprocessor_path))
+                self._model = load_object(str(self.config.model_path))
+
             return self._preprocessor, self._model
 
     def _to_dataframe(
@@ -176,8 +195,13 @@ class PredictPipeline:
 
             df = self._align_to_training_schema(df, preprocessor)
 
-            X_transformed = preprocessor.transform(df)
-            preds = model.predict(X_transformed)
+            # If we loaded a combined inference pipeline, use it directly so
+            # the preprocessor and model are always called as a single unit.
+            if self._pipeline is not None:
+                preds = self._pipeline.predict(df)
+            else:
+                X_transformed = preprocessor.transform(df)
+                preds = model.predict(X_transformed)
 
             preds = np.asarray(preds).ravel()
             logging.info(f"Prediction completed. Output shape: {preds.shape}")

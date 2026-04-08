@@ -270,14 +270,17 @@ def test_end_to_end_smoke(fake_repo: Path, monkeypatch: pytest.MonkeyPatch) -> N
     artifacts_dir = fake_repo / "artifacts"
     model_path = artifacts_dir / "model.pkl"
     preprocessor_path = artifacts_dir / "preprocessor.pkl"
+    pipeline_path = artifacts_dir / "pipeline.pkl"
     model_report_path = artifacts_dir / "model_report.json"
     assert model_path.exists(), "model.pkl not created"
     assert preprocessor_path.exists(), "preprocessor.pkl not created"
+    assert pipeline_path.exists(), "pipeline.pkl not created"
     assert model_report_path.exists(), "model_report.json not created"
 
     # Ensure artifacts aren't empty (catches serialization failures)
     assert model_path.stat().st_size > 100, "model.pkl suspiciously small"
     assert preprocessor_path.stat().st_size > 100, "preprocessor.pkl suspiciously small"
+    assert pipeline_path.stat().st_size > 100, "pipeline.pkl suspiciously small"
     assert (
         model_report_path.stat().st_size > 100
     ), "model_report.json suspiciously small"

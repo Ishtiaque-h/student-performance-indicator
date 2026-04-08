@@ -85,6 +85,11 @@ class ArtifactsConfig:
 
     preprocessor_name: str = "preprocessor.pkl"
     model_name: str = "model.pkl"
+    # Combined preprocessor+model sklearn Pipeline written after training.
+    # predict_pipeline.py uses this single artifact so the same fitted
+    # ColumnTransformer that was used during training is always paired with
+    # the model — eliminating any risk of train/serve skew.
+    pipeline_name: str = "pipeline.pkl"
     model_report_name: str = "model_report.json"
 
     def artifacts_dir(self, repo_root: Path) -> Path:
@@ -107,6 +112,9 @@ class ArtifactsConfig:
 
     def model_path(self, repo_root: Path) -> Path:
         return self.artifacts_dir(repo_root) / self.model_name
+
+    def pipeline_path(self, repo_root: Path) -> Path:
+        return self.artifacts_dir(repo_root) / self.pipeline_name
 
     def model_report_path(self, repo_root: Path) -> Path:
         return self.artifacts_dir(repo_root) / self.model_report_name
