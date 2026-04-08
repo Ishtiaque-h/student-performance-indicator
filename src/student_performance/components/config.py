@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 # ----------------------------
 # Core schema / dataset config
@@ -40,6 +40,15 @@ class DatasetConfig:
     # available at prediction time (see deployment scenario above).
     drop_cols: List[str] = field(
         default_factory=lambda: ["reading_score", "writing_score"]
+    )
+
+    # Allowed [min, max] range for numeric input features at inference time.
+    # Keys must match column names in the dataset.  Out-of-range values are
+    # rejected with HTTP 422 before they reach the model, preventing silent
+    # nonsense predictions (e.g. writing_score: -999).
+    # Example: {"writing_score": (0, 100), "reading_score": (0, 100)}
+    numeric_ranges: Dict[str, Tuple[float, float]] = field(
+        default_factory=dict
     )
 
 

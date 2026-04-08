@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, model_validator
 
 from student_performance import __version__
+from student_performance.components.config import CONFIG
 from student_performance.exception import CustomException
 from student_performance.logger import get_logger
 from student_performance.pipeline.predict_pipeline import PredictPipeline
@@ -133,6 +134,20 @@ def _validate_and_normalize(
                                 f"{prefix}Invalid value '{item[col]}' for field '{col}'. "
                                 f"Expected one of: {', '.join(sorted(set(str(c) for c in categories[i])))}"
                             )
+
+    # Validate numeric ranges defined in config (e.g. test scores must be 0-100).
+    numeric_ranges = CONFIG.dataset.numeric_ranges or {}
+    for col, (lo, hi) in numeric_ranges.items():
+        if col in normalized and normalized[col] is not None:
+            try:
+                val = float(normalized[col])
+            except (TypeError, ValueError):
+                continue  # not numeric; categorical validator will catch it
+            if not (lo <= val <= hi):
+                raise ValueError(
+                    f"{prefix}Value {val} for field '{col}' is out of the allowed range "
+                    f"[{lo}, {hi}]."
+                )
 
     return normalized
 
