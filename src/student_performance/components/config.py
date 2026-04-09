@@ -43,10 +43,10 @@ class DatasetConfig:
     )
 
     # Allowed [min, max] range for numeric input features at inference time.
-    # Keys must match column names in the dataset.  Out-of-range values are
-    # rejected with HTTP 422 before they reach the model, preventing silent
-    # nonsense predictions (e.g. writing_score: -999).
-    # Example: {"writing_score": (0, 100), "reading_score": (0, 100)}
+    # Keys must match column names used as prediction features (not drop_cols).
+    # Out-of-range values are rejected with HTTP 422 before they reach the
+    # model, preventing silent nonsense predictions.
+    # Example: if you add a numeric feature "age", set {"age": (5, 25)}.
     numeric_ranges: Dict[str, Tuple[float, float]] = field(
         default_factory=dict
     )

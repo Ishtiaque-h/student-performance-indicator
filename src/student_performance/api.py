@@ -136,7 +136,7 @@ def _validate_and_normalize(
                             )
 
     # Validate numeric ranges defined in config (e.g. test scores must be 0-100).
-    numeric_ranges = CONFIG.dataset.numeric_ranges or {}
+    numeric_ranges = CONFIG.dataset.numeric_ranges
     for col, (lo, hi) in numeric_ranges.items():
         if col in normalized and normalized[col] is not None:
             try:
