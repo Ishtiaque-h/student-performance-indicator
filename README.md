@@ -59,13 +59,19 @@ Production deployments never retrain from scratch. The model artifact is:
 
 ## 📊 Problem Statement
 
-**Question**: How do demographic and educational factors affect student academic performance?
+**Question**: How do demographic and administrative factors known at enrolment affect a student's math score?
 
 **Dataset**: [Kaggle Student Performance Dataset](https://www.kaggle.com/datasets/spscientist/students-performance-in-exams)
 - 1,000 students
-- 8 features: gender, race/ethnicity, parental education, lunch type, test prep course, scores
-- **Target**: Math score (regression task)
-- **Features used**: 5 categorical features (excluded reading/writing scores to prevent data leakage)
+- 8 columns: gender, race/ethnicity, parental education, lunch type, test prep course, math/reading/writing scores
+- **Target**: Math score (continuous regression, range 0–100; dataset mean ≈ 66, std ≈ 15)
+- **Features used at inference**: 5 categorical features — gender, race/ethnicity, parental level of education, lunch, test preparation course
+- **Excluded features**: reading_score, writing_score — these are **target leakage** in the deployment scenario (see below)
+
+**Why reading/writing scores are excluded (leakage)**:
+This model is used at the **point of enrolment**, before any exams have been taken.
+Reading and writing scores are recorded on the same sitting as the math score, so they would be perfect predictors — but they are not available until after the math score is already known.
+Including them would be target leakage; the model would be useless in production.
 
 ---
 
@@ -90,8 +96,8 @@ Production deployments never retrain from scratch. The model artifact is:
 ┌──────────────────────────────────────┬──────────────────────┐
 │     Google Cloud Storage (GCS)       │   Artifact Registry  │
 ├──────────────────────────────────────┼──────────────────────┤
-│ • Model artifacts (model.pkl)        │ • Docker images      │
-│ • Preprocessor (preprocessor.pkl)    │ • Tagged by SHA/ver  │
+│ • pipeline.pkl (preprocessor+model)  │ • Docker images      │
+│ • model.pkl / preprocessor.pkl       │ • Tagged by SHA/ver  │
 │ • Run index (latest/<run_id>/)       │                      │
 │ • Promoted pointer (promoted/        │                      │
 │     latest_uri.txt)                  │                      │
@@ -179,7 +185,7 @@ Read promoted/latest_uri.txt from GCS  ← exact model from staging
     ↓
 Build & push Docker image (tagged with version)
     ↓
-Verify model.pkl + preprocessor.pkl exist in GCS
+Verify model.pkl + preprocessor.pkl + pipeline.pkl exist in GCS
     ↓
 Deploy to Cloud Run PRODUCTION with promoted model URI
     ↓
@@ -225,6 +231,10 @@ The `notebooks/` directory contains Jupyter notebooks documenting the data explo
   - Dataset overview and statistics
   - Feature distributions and correlations
   - Missing value analysis
+  - **Math score target distribution** with mean/median annotations
+  - **Correlation heatmap** — confirms reading/writing score correlation with math score (R > 0.8)
+  - **Box plots**: math score vs each of the 5 categorical prediction features
+  - **IQR outlier analysis** with flagged rows
   - Insights that informed feature engineering decisions
 
 This analysis informed key decisions:
@@ -242,7 +252,8 @@ This analysis informed key decisions:
 
 | Model | Description | Hyperparams Tuned |
 |-------|-------------|-------------------|
-| **Linear Regression** | Baseline | — |
+| **Dummy (mean)** | Predicts the training-set mean for every input — the floor every real model must beat (test R² ≈ 0) | — |
+| **Linear Regression** | OLS fit | — |
 | **Ridge** | L2 regularization | `alpha` |
 | **Lasso** | L1 regularization | `alpha` |
 | **KNN** | K-nearest neighbors | `n_neighbors`, `weights`, `p` |
@@ -273,6 +284,11 @@ This analysis informed key decisions:
 - **Scoring metric**: R² (5-fold CV)
 - **Selection criterion**: Prefers CV score over test R² (prevents overfitting to test set)
 - **Quality gate**: Test R² ≥ 0.10 required for staging promotion
+- **Reported metrics**: R², MAE, and RMSE are logged for every model; all three are surfaced in `model_report.json` and via the `/model_info` API endpoint
+
+### **Inference Artifact**
+
+After training, a single `pipeline.pkl` is saved that bundles the fitted `ColumnTransformer` (preprocessor) and the best model in one sklearn `Pipeline`.  The serving container loads only this file, so the preprocessor and model are always in sync — no train/serve skew is possible.
 
 ### **Preprocessing**
 
