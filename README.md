@@ -185,7 +185,7 @@ Read promoted/latest_uri.txt from GCS  ← exact model from staging
     ↓
 Build & push Docker image (tagged with version)
     ↓
-Verify model.pkl + preprocessor.pkl + pipeline.pkl exist in GCS
+Verify `pipeline.pkl` + `model_report.json` + `ingestion_meta.json` exist in GCS
     ↓
 Deploy to Cloud Run PRODUCTION with promoted model URI
     ↓
@@ -288,7 +288,7 @@ This analysis informed key decisions:
 
 ### **Inference Artifact**
 
-After training, a single `pipeline.pkl` is saved that bundles the fitted `ColumnTransformer` (preprocessor) and the best model in one sklearn `Pipeline`. Serving prefers this unified artifact, so the preprocessor and model stay in sync and train/serve skew is avoided. For backward compatibility, serving can fall back to separate `preprocessor.pkl` + `model.pkl` artifacts if needed.
+After training, a single `pipeline.pkl` is saved that bundles the fitted `ColumnTransformer` (preprocessor) and the best model in one sklearn `Pipeline`. Serving requires this unified artifact so the preprocessor and model stay in sync and train/serve skew is avoided.
 
 ### **Preprocessing**
 

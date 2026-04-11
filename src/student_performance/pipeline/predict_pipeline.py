@@ -150,7 +150,7 @@ class PredictPipeline:
             self._pipeline = load_object(str(self.config.pipeline_path))
             named_steps = getattr(self._pipeline, "named_steps", None)
             if (
-                isinstance(named_steps, dict)
+                named_steps is not None
                 and "preprocessor" in named_steps
                 and "model" in named_steps
             ):

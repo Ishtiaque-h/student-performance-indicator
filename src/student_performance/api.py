@@ -115,9 +115,7 @@ def _validate_and_normalize(
         raise ValueError(f"{prefix}Unexpected fields: {extra}")
 
     normalized = {
-        key: (
-            value.strip().lower() if isinstance(value, str) and value.strip() else value
-        )
+        key: (value.strip().lower() if isinstance(value, str) else value)
         for key, value in item.items()
     }
 
