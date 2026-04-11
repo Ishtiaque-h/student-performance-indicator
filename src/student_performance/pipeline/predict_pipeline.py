@@ -112,7 +112,6 @@ class PredictPipeline:
     def _ensure_artifacts(self) -> None:
         force = _env_flag("FORCE_MODEL_DOWNLOAD", "0")
 
-
         core_required = [
             "model_report.json",
             "ingestion_meta.json",
@@ -157,9 +156,16 @@ class PredictPipeline:
                 if p.exists():
                     p.unlink()
 
-        _download_artifacts(uri=artifact_uri, local_dir=self.config.artifacts_dir, filenames=core_required)
-        _download_artifacts(uri=artifact_uri, local_dir=self.config.artifacts_dir, filenames=pipeline_required) 
- 
+        _download_artifacts(
+            uri=artifact_uri,
+            local_dir=self.config.artifacts_dir,
+            filenames=core_required,
+        )
+        _download_artifacts(
+            uri=artifact_uri,
+            local_dir=self.config.artifacts_dir,
+            filenames=pipeline_required,
+        )
 
         missing_core = [
             f for f in core_required if not (self.config.artifacts_dir / f).exists()
@@ -168,9 +174,7 @@ class PredictPipeline:
             self.config.artifacts_dir / CONFIG.artifacts.pipeline_name
         ).exists()
         if missing_core or not has_pipeline:
-            raise FileNotFoundError(
-                f"Expected pipeline.pkl from {artifact_uri}"
-            )
+            raise FileNotFoundError(f"Expected pipeline.pkl from {artifact_uri}")
 
     def _load_artifacts(self) -> Tuple[Any, Any]:
         # Fast path: already loaded in memory
