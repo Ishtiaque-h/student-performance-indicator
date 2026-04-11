@@ -30,6 +30,7 @@ models/
 reports/
 mlruns/
 notebooks/catboost_info/
+catboost_info/
 artifacts/
 
 # PyInstaller

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Tuple
 
 # ----------------------------
 # Core schema / dataset config
@@ -16,18 +16,38 @@ class DatasetConfig:
       - where raw data lives
       - what the target column is
       - which columns are excluded from features (drop_cols)
+
+    Deployment scenario
+    -------------------
+    This model is used at the **point of enrolment** — before any exams
+    have been taken.  Only demographic and administrative information is
+    available at that time (gender, race/ethnicity, parental education,
+    lunch programme, test-prep enrolment).
+
+    reading_score and writing_score would be perfect predictors of
+    math_score (they are all measured on the same sitting), but they are
+    NOT available at inference time in the target deployment scenario —
+    including them would constitute target leakage.  They are therefore
+    listed in drop_cols so they are excluded from both training features
+    and prediction inputs.
     """
 
     data_rel_path: Path = Path("data/raw/stud.csv")
 
     target_col: str = "math_score"
 
-    # Columns you want to exclude from training/prediction features.
-    # (Example: if you treat reading/writing as leakage or you intentionally
-    # want to predict math without them.)
+    # Columns excluded from training features because they are not
+    # available at prediction time (see deployment scenario above).
     drop_cols: List[str] = field(
         default_factory=lambda: ["reading_score", "writing_score"]
     )
+
+    # Allowed [min, max] range for numeric input features at inference time.
+    # Keys must match column names used as prediction features (not drop_cols).
+    # Out-of-range values are rejected with HTTP 422 before they reach the
+    # model, preventing silent nonsense predictions.
+    # Example: if you add a numeric feature "age", set {"age": (5, 25)}.
+    numeric_ranges: Dict[str, Tuple[float, float]] = field(default_factory=dict)
 
 
 # ----------------------------
@@ -63,6 +83,11 @@ class ArtifactsConfig:
 
     preprocessor_name: str = "preprocessor.pkl"
     model_name: str = "model.pkl"
+    # Combined preprocessor+model sklearn Pipeline written after training.
+    # predict_pipeline.py uses this single artifact so the same fitted
+    # ColumnTransformer that was used during training is always paired with
+    # the model — eliminating any risk of train/serve skew.
+    pipeline_name: str = "pipeline.pkl"
     model_report_name: str = "model_report.json"
 
     def artifacts_dir(self, repo_root: Path) -> Path:
@@ -85,6 +110,9 @@ class ArtifactsConfig:
 
     def model_path(self, repo_root: Path) -> Path:
         return self.artifacts_dir(repo_root) / self.model_name
+
+    def pipeline_path(self, repo_root: Path) -> Path:
+        return self.artifacts_dir(repo_root) / self.pipeline_name
 
     def model_report_path(self, repo_root: Path) -> Path:
         return self.artifacts_dir(repo_root) / self.model_report_name
@@ -123,6 +151,30 @@ class DenseSafetyConfig:
 
 
 # ----------------------------
+# Product output config
+# ----------------------------
+
+
+@dataclass
+class ProductConfig:
+    """
+    Product-facing prediction settings.
+    The primary output is risk + banding, with score estimate as secondary.
+    """
+
+    # Student is considered at-risk if expected score trends below this threshold.
+    risk_threshold_score: float = 50.0
+    # Controls risk-probability smoothness around risk_threshold_score.
+    risk_probability_scale: float = 10.0
+    # Probability cutoffs for operational risk tiers.
+    risk_tier_medium_min: float = 0.40
+    risk_tier_high_min: float = 0.70
+    # Performance bands based on expected score.
+    performance_band_low_max: float = 50.0
+    performance_band_medium_max: float = 70.0
+
+
+# ----------------------------
 # Full pipeline config bundle
 # ----------------------------
 
@@ -134,6 +186,7 @@ class PipelineConfig:
     artifacts: ArtifactsConfig = field(default_factory=ArtifactsConfig)
     tuning: TuningConfig = field(default_factory=TuningConfig)
     dense_safety: DenseSafetyConfig = field(default_factory=DenseSafetyConfig)
+    product: ProductConfig = field(default_factory=ProductConfig)
 
 
 # Single shared instance (optional, but convenient)

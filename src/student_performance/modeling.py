@@ -222,5 +222,7 @@ def evaluate_models(
         "selection_score": float(best_sel_score),
         "selection_source": best_sel_source,
         "test_r2": float(report["models"][best_name]["test"]["r2"]),
+        "test_mae": float(report["models"][best_name]["test"]["mae"]),
+        "test_rmse": float(report["models"][best_name]["test"]["rmse"]),
     }
     return report, best_name, best_estimator

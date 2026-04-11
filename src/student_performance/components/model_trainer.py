@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+from sklearn.dummy import DummyRegressor
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.pipeline import Pipeline as SklearnPipeline
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import (
@@ -17,7 +19,7 @@ from sklearn.ensemble import (
 
 from student_performance.exception import CustomException
 from student_performance.logger import logging
-from student_performance.utils import find_project_root, save_object
+from student_performance.utils import find_project_root, load_object, save_object
 from student_performance.modeling import evaluate_models
 from student_performance.components.config import CONFIG
 
@@ -136,6 +138,7 @@ class ModelTrainer:
 
             artifacts_dir = CONFIG.artifacts.artifacts_dir(repo_root)
             model_path = CONFIG.artifacts.model_path(repo_root)
+            pipeline_path = CONFIG.artifacts.pipeline_path(repo_root)
             report_path = CONFIG.artifacts.model_report_path(repo_root)
 
             artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -144,6 +147,9 @@ class ModelTrainer:
             y_test = np.asarray(y_test).ravel()
 
             models: Dict[str, Any] = {
+                # Baseline: a model that always predicts the mean.
+                # Any real model must beat this to be considered useful.
+                "Dummy": DummyRegressor(strategy="mean"),
                 "LinearRegression": LinearRegression(),
                 "Ridge": Ridge(random_state=42),
                 "Lasso": Lasso(random_state=42, max_iter=10000),
@@ -339,6 +345,7 @@ class ModelTrainer:
             model_report["artifacts"] = {
                 "artifacts_dir": str(artifacts_dir),
                 "model_path": str(model_path),
+                "pipeline_path": str(pipeline_path),
                 "report_path": str(report_path),
             }
 
@@ -350,6 +357,19 @@ class ModelTrainer:
 
             save_object(str(model_path), best_model)
             model_report["best_model"]["model_path"] = str(model_path)
+
+            # Build and save a combined preprocessor+model sklearn Pipeline.
+            # predict_pipeline.py uses this single artifact so the exact fitted
+            # ColumnTransformer from training is always paired with its model,
+            # eliminating the risk of train/serve skew.
+            preprocessor_path = CONFIG.artifacts.preprocessor_path(repo_root)
+            preprocessor = load_object(str(preprocessor_path))
+            inference_pipeline = SklearnPipeline(
+                steps=[("preprocessor", preprocessor), ("model", best_model)]
+            )
+            save_object(str(pipeline_path), inference_pipeline)
+            model_report["best_model"]["pipeline_path"] = str(pipeline_path)
+            logging.info(f"Saved inference pipeline at {pipeline_path}")
 
             report_path.write_text(json.dumps(model_report, indent=2))
 

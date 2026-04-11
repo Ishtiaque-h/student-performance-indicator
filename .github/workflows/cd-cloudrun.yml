@@ -118,8 +118,9 @@ jobs:
           echo "Deploying with ARTIFACTS_URI=${ARTIFACTS_URI}"
 
           # Fail fast: do not deploy if promoted artifacts aren't present
-          gcloud storage ls "${ARTIFACTS_URI}/model.pkl" >/dev/null
-          gcloud storage ls "${ARTIFACTS_URI}/preprocessor.pkl" >/dev/null
+          gcloud storage ls "${ARTIFACTS_URI}/pipeline.pkl" >/dev/null
+          gcloud storage ls "${ARTIFACTS_URI}/model_report.json" >/dev/null
+          gcloud storage ls "${ARTIFACTS_URI}/ingestion_meta.json" >/dev/null
 
           # Build env vars string — use ARTIFACTS_URI from the promoted pointer
           ENV_VARS="ARTIFACTS_DIR=/tmp/artifacts,GCS_ARTIFACTS_URI=${ARTIFACTS_URI},FORCE_MODEL_DOWNLOAD=1"
