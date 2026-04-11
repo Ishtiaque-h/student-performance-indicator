@@ -84,6 +84,15 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+def _get_pipeline(request: Request) -> PredictPipeline:
+    pipeline = getattr(request.app.state, "pipeline", None)
+    if pipeline is None:
+        pipeline = PredictPipeline()
+        pipeline._load_artifacts()
+        request.app.state.pipeline = pipeline
+    return pipeline
+
+
 # ---- Validation helper ----
 def _validate_and_normalize(
     item: Dict[str, Any],
@@ -178,7 +187,7 @@ def schema(request: Request) -> Dict[str, Any]:
     Returns feature names + valid categories (from trained OHE).
     Used by the UI to render dropdowns dynamically.
     """
-    pipeline: PredictPipeline = request.app.state.pipeline
+    pipeline = _get_pipeline(request)
     preprocessor, _ = pipeline._load_artifacts()
 
     cols = getattr(preprocessor, "feature_names_in_", None)
@@ -209,7 +218,7 @@ def schema(request: Request) -> Dict[str, Any]:
 @app.get("/meta")
 def meta(request: Request) -> dict:
     """Expose useful metadata about the model and artifacts for debugging and UI display."""
-    pipeline: PredictPipeline = request.app.state.pipeline
+    pipeline = _get_pipeline(request)
 
     return {
         "artifacts_dir": str(pipeline.config.artifacts_dir),
@@ -224,7 +233,7 @@ def meta(request: Request) -> dict:
 @app.get("/model_info")
 def model_info(request: Request) -> dict:
     """Get information about the currently loaded model."""
-    pipeline: PredictPipeline = request.app.state.pipeline
+    pipeline = _get_pipeline(request)
 
     try:
         report_path = pipeline.config.report_path
@@ -260,8 +269,8 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
     logger.info(f"Received prediction request with ID: {request_id}")
 
     try:
-        pipeline: PredictPipeline = request.app.state.pipeline
-        preprocessor, model = pipeline._load_artifacts()
+        pipeline = _get_pipeline(request)
+        preprocessor, _ = pipeline._load_artifacts()
 
         expected_features = list(preprocessor.feature_names_in_)
         normalized_payload = _validate_and_normalize(
@@ -290,8 +299,8 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
     Batch prediction with dynamic validation.
     """
     try:
-        pipeline: PredictPipeline = request.app.state.pipeline
-        preprocessor, model = pipeline._load_artifacts()
+        pipeline = _get_pipeline(request)
+        preprocessor, _ = pipeline._load_artifacts()
 
         expected_features = list(preprocessor.feature_names_in_)
 

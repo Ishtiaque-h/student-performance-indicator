@@ -547,7 +547,7 @@ git push origin v3.4.0
 | Lint + format | CI | Code quality before any deploy |
 | Smoke tests (code) | CI + CD | Pipeline runs end-to-end |
 | R² ≥ 0.10 | `retrain.yml` | Model quality before staging |
-| Artifact existence | `cd-cloudrun.yml` | `model.pkl` + `preprocessor.pkl` in GCS |
+| Artifact existence | `cd-cloudrun.yml` | `pipeline.pkl` (+ metadata files) in GCS |
 | Post-deploy smoke | `cd-cloudrun.yml` | Live `/health` + `/predict` + 422 check |
 
 ---
