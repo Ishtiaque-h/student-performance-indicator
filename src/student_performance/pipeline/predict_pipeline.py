@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -56,6 +57,42 @@ class PredictPipeline:
         self._preprocessor: Any = None
         self._model: Any = None
         self._pipeline: Any = None
+
+    def _read_test_mae(self) -> float:
+        if not self.config.report_path.exists():
+            return 8.0
+        try:
+            report = json.loads(self.config.report_path.read_text())
+            return float(report.get("best_model", {}).get("test_mae", 8.0))
+        except Exception:
+            return 8.0
+
+    def _risk_probability(self, score_prediction: float) -> float:
+        threshold = float(CONFIG.product.risk_threshold_score)
+        scale = max(float(CONFIG.product.risk_probability_scale), 1e-6)
+        # Higher probability when predicted score is below threshold.
+        z = (threshold - float(score_prediction)) / scale
+        return float(1.0 / (1.0 + np.exp(-z)))
+
+    def _risk_tier(self, risk_probability: float) -> str:
+        if risk_probability >= float(CONFIG.product.risk_tier_high_min):
+            return "high"
+        if risk_probability >= float(CONFIG.product.risk_tier_medium_min):
+            return "medium"
+        return "low"
+
+    def _performance_band(self, score_prediction: float) -> str:
+        if score_prediction < float(CONFIG.product.performance_band_low_max):
+            return "low"
+        if score_prediction < float(CONFIG.product.performance_band_medium_max):
+            return "medium"
+        return "high"
+
+    def _score_range(self, score_prediction: float) -> Tuple[float, float]:
+        half_width = max(self._read_test_mae(), 1.0)
+        low = max(0.0, float(score_prediction) - half_width)
+        high = min(100.0, float(score_prediction) + half_width)
+        return (low, high)
 
     def _ensure_artifacts(self) -> None:
         force = _env_flag("FORCE_MODEL_DOWNLOAD", "0")
@@ -231,3 +268,22 @@ class PredictPipeline:
         except Exception as e:
             logging.exception("Prediction failed")
             raise CustomException(e, sys)
+
+    def predict_with_assessment(
+        self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        preds = self.predict(X)
+        output: List[Dict[str, Any]] = []
+        for raw_pred in preds:
+            pred = float(raw_pred)
+            risk_prob = self._risk_probability(pred)
+            output.append(
+                {
+                    "score_prediction": pred,
+                    "score_range": list(self._score_range(pred)),
+                    "performance_band": self._performance_band(pred),
+                    "risk_probability": risk_prob,
+                    "risk_tier": self._risk_tier(risk_prob),
+                }
+            )
+        return output

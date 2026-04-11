@@ -151,6 +151,30 @@ class DenseSafetyConfig:
 
 
 # ----------------------------
+# Product output config
+# ----------------------------
+
+
+@dataclass
+class ProductConfig:
+    """
+    Product-facing prediction settings.
+    The primary output is risk + banding, with score estimate as secondary.
+    """
+
+    # Student is considered at-risk if expected score trends below this threshold.
+    risk_threshold_score: float = 50.0
+    # Controls risk-probability smoothness around risk_threshold_score.
+    risk_probability_scale: float = 10.0
+    # Probability cutoffs for operational risk tiers.
+    risk_tier_medium_min: float = 0.40
+    risk_tier_high_min: float = 0.70
+    # Performance bands based on expected score.
+    performance_band_low_max: float = 50.0
+    performance_band_medium_max: float = 70.0
+
+
+# ----------------------------
 # Full pipeline config bundle
 # ----------------------------
 
@@ -162,6 +186,7 @@ class PipelineConfig:
     artifacts: ArtifactsConfig = field(default_factory=ArtifactsConfig)
     tuning: TuningConfig = field(default_factory=TuningConfig)
     dense_safety: DenseSafetyConfig = field(default_factory=DenseSafetyConfig)
+    product: ProductConfig = field(default_factory=ProductConfig)
 
 
 # Single shared instance (optional, but convenient)

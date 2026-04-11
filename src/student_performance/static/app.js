@@ -126,6 +126,15 @@ async function main() {
           <div class="score-value">${score}</div>
           <div class="score-unit">out of 100</div>
         </div>
+        <div class="score-meta">
+          Risk Tier: <strong>${(body.risk_tier || "n/a").toUpperCase()}</strong> ·
+          Risk Probability: <strong>${
+            body.risk_probability != null
+              ? `${Math.round(Number(body.risk_probability) * 100)}%`
+              : "n/a"
+          }</strong> ·
+          Band: <strong>${body.performance_band || "n/a"}</strong>
+        </div>
         <div class="score-bar-wrap">
           <div class="score-bar" id="score-bar"></div>
         </div>
