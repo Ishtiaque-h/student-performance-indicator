@@ -60,16 +60,22 @@ class PredictPipeline:
     def _ensure_artifacts(self) -> None:
         force = _env_flag("FORCE_MODEL_DOWNLOAD", "0")
 
-        # Only the files required for serving
-        required = [
-            CONFIG.artifacts.preprocessor_name,
-            CONFIG.artifacts.model_name,
-            CONFIG.artifacts.pipeline_name,
+        core_required = [
             "model_report.json",
             "ingestion_meta.json",
         ]
+        pipeline_required = [CONFIG.artifacts.pipeline_name]
+        legacy_required = [
+            CONFIG.artifacts.preprocessor_name,
+            CONFIG.artifacts.model_name,
+        ]
 
-        local_ok = all((self.config.artifacts_dir / f).exists() for f in required)
+        core_ok = all((self.config.artifacts_dir / f).exists() for f in core_required)
+        local_pipeline_ok = self.config.pipeline_path.exists()
+        local_legacy_ok = (
+            self.config.preprocessor_path.exists() and self.config.model_path.exists()
+        )
+        local_ok = core_ok and (local_pipeline_ok or local_legacy_ok)
 
         # If artifacts exist locally and we are not forcing a download, do nothing.
         if local_ok and not force:
@@ -101,7 +107,7 @@ class PredictPipeline:
         )
 
         if force:
-            for f in required:
+            for f in core_required + pipeline_required + legacy_required:
                 p = self.config.artifacts_dir / f
                 if p.exists():
                     p.unlink()
@@ -109,13 +115,40 @@ class PredictPipeline:
         download_artifacts_from_gcs(
             gcs_uri=gcs_uri,
             local_dir=self.config.artifacts_dir,
-            filenames=required,
+            filenames=core_required,
         )
 
-        missing = [f for f in required if not (self.config.artifacts_dir / f).exists()]
-        if missing:
+        try:
+            download_artifacts_from_gcs(
+                gcs_uri=gcs_uri,
+                local_dir=self.config.artifacts_dir,
+                filenames=pipeline_required,
+            )
+        except FileNotFoundError:
+            logging.warning(
+                "pipeline.pkl not found in promoted artifacts; trying legacy "
+                "preprocessor.pkl + model.pkl fallback."
+            )
+            download_artifacts_from_gcs(
+                gcs_uri=gcs_uri,
+                local_dir=self.config.artifacts_dir,
+                filenames=legacy_required,
+            )
+
+        missing_core = [
+            f for f in core_required if not (self.config.artifacts_dir / f).exists()
+        ]
+        has_pipeline = (
+            self.config.artifacts_dir / CONFIG.artifacts.pipeline_name
+        ).exists()
+        has_legacy = all(
+            (self.config.artifacts_dir / f).exists() for f in legacy_required
+        )
+        if missing_core or not (has_pipeline or has_legacy):
             raise FileNotFoundError(
-                f"Downloaded from {gcs_uri} but missing required files: {missing}"
+                "Downloaded artifacts are incomplete. "
+                f"Missing core files: {missing_core}. "
+                "Expected either pipeline.pkl OR both preprocessor.pkl and model.pkl."
             )
 
     def _load_artifacts(self) -> Tuple[Any, Any]:
@@ -131,18 +164,36 @@ class PredictPipeline:
             self._ensure_artifacts()
 
             # Load the combined inference pipeline if available (preferred).
-            # Fall back to loading preprocessor + model separately for
-            # backwards-compatibility with older artifact sets.
+            # Fall back to preprocessor + model for older artifact sets.
             if self.config.pipeline_path.exists():
                 self._pipeline = load_object(str(self.config.pipeline_path))
-                # Extract steps so the schema endpoint can still inspect the
-                # fitted ColumnTransformer directly via _preprocessor.
-                self._preprocessor = self._pipeline.named_steps["preprocessor"]
-                self._model = self._pipeline.named_steps["model"]
-            else:
+                named_steps = getattr(self._pipeline, "named_steps", None)
+                if (
+                    isinstance(named_steps, dict)
+                    and "preprocessor" in named_steps
+                    and "model" in named_steps
+                ):
+                    # Extract steps so schema endpoint can inspect preprocessor.
+                    self._preprocessor = named_steps["preprocessor"]
+                    self._model = named_steps["model"]
+                else:
+                    self._pipeline = None
+                    logging.warning(
+                        "pipeline.pkl exists but does not contain expected steps "
+                        "['preprocessor', 'model']; trying legacy fallback artifacts."
+                    )
+
+            if self._pipeline is None:
+                if not (
+                    self.config.preprocessor_path.exists()
+                    and self.config.model_path.exists()
+                ):
+                    raise FileNotFoundError(
+                        "Could not load a valid pipeline.pkl and legacy artifacts "
+                        "preprocessor.pkl/model.pkl are not available."
+                    )
                 logging.warning(
-                    "pipeline.pkl not found; falling back to separate preprocessor.pkl "
-                    "and model.pkl artifacts.  Re-train to generate a unified pipeline."
+                    "Using legacy preprocessor.pkl + model.pkl artifacts for inference."
                 )
                 self._preprocessor = load_object(str(self.config.preprocessor_path))
                 self._model = load_object(str(self.config.model_path))

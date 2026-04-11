@@ -288,7 +288,7 @@ This analysis informed key decisions:
 
 ### **Inference Artifact**
 
-After training, a single `pipeline.pkl` is saved that bundles the fitted `ColumnTransformer` (preprocessor) and the best model in one sklearn `Pipeline`.  The serving container loads only this file, so the preprocessor and model are always in sync — no train/serve skew is possible.
+After training, a single `pipeline.pkl` is saved that bundles the fitted `ColumnTransformer` (preprocessor) and the best model in one sklearn `Pipeline`. Serving prefers this unified artifact, so the preprocessor and model stay in sync and train/serve skew is avoided. For backward compatibility, serving can fall back to separate `preprocessor.pkl` + `model.pkl` artifacts if needed.
 
 ### **Preprocessing**
 

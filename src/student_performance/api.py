@@ -142,7 +142,10 @@ def _validate_and_normalize(
             try:
                 val = float(normalized[col])
             except (TypeError, ValueError):
-                continue  # not numeric; categorical validator will catch it
+                raise ValueError(
+                    f"{prefix}Invalid numeric value '{item[col]}' for field '{col}'."
+                )
+            normalized[col] = val
             if not (lo <= val <= hi):
                 raise ValueError(
                     f"{prefix}Value {val} for field '{col}' is out of the allowed range "

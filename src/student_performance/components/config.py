@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 # ----------------------------
 # Core schema / dataset config
@@ -47,9 +47,7 @@ class DatasetConfig:
     # Out-of-range values are rejected with HTTP 422 before they reach the
     # model, preventing silent nonsense predictions.
     # Example: if you add a numeric feature "age", set {"age": (5, 25)}.
-    numeric_ranges: Dict[str, Tuple[float, float]] = field(
-        default_factory=dict
-    )
+    numeric_ranges: Dict[str, Tuple[float, float]] = field(default_factory=dict)
 
 
 # ----------------------------
