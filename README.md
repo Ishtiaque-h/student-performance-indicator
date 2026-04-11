@@ -76,6 +76,17 @@ This avoids training-time randomness between staging and production.
 
 ---
 
+## EDA quality and practical interpretation
+
+The EDA work is documented in **[notebooks/EDA_student_performance.ipynb](./notebooks/EDA_student_performance.ipynb)** and emphasizes decision-useful interpretation (not only plots), including leakage checks, subgroup comparisons, and deploy-time feature reasoning.
+
+Examples of practical takeaways from EDA:
+- large performance gap by lunch type (~11-point mean math gap),
+- measurable prep-course lift (~5–7 points depending on subgroup),
+- strong reading/writing correlation with math (`r ≈ 0.8`), used to justify leakage-aware feature exclusion.
+
+---
+
 ## 5) Artifact contract (important)
 
 ### Training outputs
@@ -210,6 +221,7 @@ student-performance-indicator/
 - This is a strong MLOps learning system and practical template, but not a causal model of student outcomes.
 - Current monitoring is deployment-health oriented; online drift/performance monitoring can be added later.
 - Performance interpretation should always be tied to the deployment-time feature availability constraint.
+- For AWS-focused deployment work (AWS-oriented infra/deployment variant of this project), see the concise alternative implementation track in the **`aws-deployment`** branch.
 
 ---
 
