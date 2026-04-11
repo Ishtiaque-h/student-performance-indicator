@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, model_validator
 
 from student_performance import __version__
+from student_performance.components.config import CONFIG
 from student_performance.exception import CustomException
 from student_performance.logger import get_logger
 from student_performance.pipeline.predict_pipeline import PredictPipeline
@@ -83,6 +84,15 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+def _get_pipeline(request: Request) -> PredictPipeline:
+    pipeline = getattr(request.app.state, "pipeline", None)
+    if pipeline is None:
+        pipeline = PredictPipeline()
+        pipeline._load_artifacts()
+        request.app.state.pipeline = pipeline
+    return pipeline
+
+
 # ---- Validation helper ----
 def _validate_and_normalize(
     item: Dict[str, Any],
@@ -105,9 +115,7 @@ def _validate_and_normalize(
         raise ValueError(f"{prefix}Unexpected fields: {extra}")
 
     normalized = {
-        key: (
-            value.strip().lower() if isinstance(value, str) and value.strip() else value
-        )
+        key: (value.strip().lower() if isinstance(value, str) else value)
         for key, value in item.items()
     }
 
@@ -133,6 +141,23 @@ def _validate_and_normalize(
                                 f"{prefix}Invalid value '{item[col]}' for field '{col}'. "
                                 f"Expected one of: {', '.join(sorted(set(str(c) for c in categories[i])))}"
                             )
+
+    # Validate numeric ranges defined in config (e.g. test scores must be 0-100).
+    numeric_ranges = CONFIG.dataset.numeric_ranges
+    for col, (lo, hi) in numeric_ranges.items():
+        if col in normalized and normalized[col] is not None:
+            try:
+                val = float(normalized[col])
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"{prefix}Invalid numeric value '{item[col]}' for field '{col}'."
+                )
+            normalized[col] = val
+            if not (lo <= val <= hi):
+                raise ValueError(
+                    f"{prefix}Value {val} for field '{col}' is out of the allowed range "
+                    f"[{lo}, {hi}]."
+                )
 
     return normalized
 
@@ -160,7 +185,7 @@ def schema(request: Request) -> Dict[str, Any]:
     Returns feature names + valid categories (from trained OHE).
     Used by the UI to render dropdowns dynamically.
     """
-    pipeline: PredictPipeline = request.app.state.pipeline
+    pipeline = _get_pipeline(request)
     preprocessor, _ = pipeline._load_artifacts()
 
     cols = getattr(preprocessor, "feature_names_in_", None)
@@ -191,7 +216,7 @@ def schema(request: Request) -> Dict[str, Any]:
 @app.get("/meta")
 def meta(request: Request) -> dict:
     """Expose useful metadata about the model and artifacts for debugging and UI display."""
-    pipeline: PredictPipeline = request.app.state.pipeline
+    pipeline = _get_pipeline(request)
 
     return {
         "artifacts_dir": str(pipeline.config.artifacts_dir),
@@ -206,7 +231,7 @@ def meta(request: Request) -> dict:
 @app.get("/model_info")
 def model_info(request: Request) -> dict:
     """Get information about the currently loaded model."""
-    pipeline: PredictPipeline = request.app.state.pipeline
+    pipeline = _get_pipeline(request)
 
     try:
         report_path = pipeline.config.report_path
@@ -218,6 +243,8 @@ def model_info(request: Request) -> dict:
                 "best_model": report.get("best_model", {}),
                 "trained_at": report.get("best_model", {}).get("timestamp", "unknown"),
                 "test_r2": report.get("best_model", {}).get("test_r2"),
+                "test_mae": report.get("best_model", {}).get("test_mae"),
+                "test_rmse": report.get("best_model", {}).get("test_rmse"),
             }
     except Exception:
         pass
@@ -240,8 +267,8 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
     logger.info(f"Received prediction request with ID: {request_id}")
 
     try:
-        pipeline: PredictPipeline = request.app.state.pipeline
-        preprocessor, model = pipeline._load_artifacts()
+        pipeline = _get_pipeline(request)
+        preprocessor, _ = pipeline._load_artifacts()
 
         expected_features = list(preprocessor.feature_names_in_)
         normalized_payload = _validate_and_normalize(
@@ -270,8 +297,8 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
     Batch prediction with dynamic validation.
     """
     try:
-        pipeline: PredictPipeline = request.app.state.pipeline
-        preprocessor, model = pipeline._load_artifacts()
+        pipeline = _get_pipeline(request)
+        preprocessor, _ = pipeline._load_artifacts()
 
         expected_features = list(preprocessor.feature_names_in_)
 

@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ class PredictPipelineConfig:
     artifacts_dir: Path
     preprocessor_path: Path
     model_path: Path
+    pipeline_path: Path
     report_path: Path
     ingestion_meta_path: Path
 
@@ -46,6 +48,7 @@ class PredictPipeline:
             artifacts_dir=artifacts_dir,
             preprocessor_path=artifacts_dir / CONFIG.artifacts.preprocessor_name,
             model_path=artifacts_dir / CONFIG.artifacts.model_name,
+            pipeline_path=artifacts_dir / CONFIG.artifacts.pipeline_name,
             report_path=artifacts_dir / "model_report.json",
             ingestion_meta_path=artifacts_dir / "ingestion_meta.json",
         )
@@ -53,19 +56,56 @@ class PredictPipeline:
         # in-memory cache
         self._preprocessor: Any = None
         self._model: Any = None
+        self._pipeline: Any = None
+
+    def _read_test_mae(self) -> float:
+        if not self.config.report_path.exists():
+            return 8.0
+        try:
+            report = json.loads(self.config.report_path.read_text())
+            return float(report.get("best_model", {}).get("test_mae", 8.0))
+        except Exception:
+            return 8.0
+
+    def _risk_probability(self, score_prediction: float) -> float:
+        threshold = float(CONFIG.product.risk_threshold_score)
+        scale = max(float(CONFIG.product.risk_probability_scale), 1e-6)
+        # Higher probability when predicted score is below threshold.
+        z = (threshold - float(score_prediction)) / scale
+        return float(1.0 / (1.0 + np.exp(-z)))
+
+    def _risk_tier(self, risk_probability: float) -> str:
+        if risk_probability >= float(CONFIG.product.risk_tier_high_min):
+            return "high"
+        if risk_probability >= float(CONFIG.product.risk_tier_medium_min):
+            return "medium"
+        return "low"
+
+    def _performance_band(self, score_prediction: float) -> str:
+        if score_prediction < float(CONFIG.product.performance_band_low_max):
+            return "low"
+        if score_prediction < float(CONFIG.product.performance_band_medium_max):
+            return "medium"
+        return "high"
+
+    def _score_range(self, score_prediction: float) -> Tuple[float, float]:
+        half_width = max(self._read_test_mae(), 1.0)
+        low = max(0.0, float(score_prediction) - half_width)
+        high = min(100.0, float(score_prediction) + half_width)
+        return (low, high)
 
     def _ensure_artifacts(self) -> None:
         force = _env_flag("FORCE_MODEL_DOWNLOAD", "0")
 
-        # Only the files required for serving
-        required = [
-            CONFIG.artifacts.preprocessor_name,
-            CONFIG.artifacts.model_name,
+        core_required = [
             "model_report.json",
             "ingestion_meta.json",
         ]
+        pipeline_required = [CONFIG.artifacts.pipeline_name]
 
-        local_ok = all((self.config.artifacts_dir / f).exists() for f in required)
+        core_ok = all((self.config.artifacts_dir / f).exists() for f in core_required)
+        local_pipeline_ok = self.config.pipeline_path.exists()
+        local_ok = core_ok and local_pipeline_ok
 
         # If artifacts exist locally and we are not forcing a download, do nothing.
         if local_ok and not force:
@@ -97,7 +137,7 @@ class PredictPipeline:
         )
 
         if force:
-            for f in required:
+            for f in core_required + pipeline_required:
                 p = self.config.artifacts_dir / f
                 if p.exists():
                     p.unlink()
@@ -105,13 +145,26 @@ class PredictPipeline:
         download_artifacts_from_gcs(
             gcs_uri=gcs_uri,
             local_dir=self.config.artifacts_dir,
-            filenames=required,
+            filenames=core_required,
         )
 
-        missing = [f for f in required if not (self.config.artifacts_dir / f).exists()]
-        if missing:
+        download_artifacts_from_gcs(
+            gcs_uri=gcs_uri,
+            local_dir=self.config.artifacts_dir,
+            filenames=pipeline_required,
+        )
+
+        missing_core = [
+            f for f in core_required if not (self.config.artifacts_dir / f).exists()
+        ]
+        has_pipeline = (
+            self.config.artifacts_dir / CONFIG.artifacts.pipeline_name
+        ).exists()
+        if missing_core or not has_pipeline:
             raise FileNotFoundError(
-                f"Downloaded from {gcs_uri} but missing required files: {missing}"
+                "Downloaded artifacts are incomplete. "
+                f"Missing core files: {missing_core}. "
+                "Expected pipeline.pkl."
             )
 
     def _load_artifacts(self) -> Tuple[Any, Any]:
@@ -126,8 +179,27 @@ class PredictPipeline:
 
             self._ensure_artifacts()
 
-            self._preprocessor = load_object(str(self.config.preprocessor_path))
-            self._model = load_object(str(self.config.model_path))
+            if not self.config.pipeline_path.exists():
+                raise FileNotFoundError(
+                    f"Missing required inference artifact: {self.config.pipeline_path}"
+                )
+
+            self._pipeline = load_object(str(self.config.pipeline_path))
+            named_steps = getattr(self._pipeline, "named_steps", None)
+            if (
+                named_steps is not None
+                and "preprocessor" in named_steps
+                and "model" in named_steps
+            ):
+                # Extract steps so schema endpoint can inspect preprocessor.
+                self._preprocessor = named_steps["preprocessor"]
+                self._model = named_steps["model"]
+            else:
+                raise ValueError(
+                    "pipeline.pkl exists but does not contain expected steps "
+                    "['preprocessor', 'model']."
+                )
+
             return self._preprocessor, self._model
 
     def _to_dataframe(
@@ -176,8 +248,13 @@ class PredictPipeline:
 
             df = self._align_to_training_schema(df, preprocessor)
 
-            X_transformed = preprocessor.transform(df)
-            preds = model.predict(X_transformed)
+            # If we loaded a combined inference pipeline, use it directly so
+            # the preprocessor and model are always called as a single unit.
+            if self._pipeline is not None:
+                preds = self._pipeline.predict(df)
+            else:
+                X_transformed = preprocessor.transform(df)
+                preds = model.predict(X_transformed)
 
             preds = np.asarray(preds).ravel()
             logging.info(f"Prediction completed. Output shape: {preds.shape}")
@@ -191,3 +268,22 @@ class PredictPipeline:
         except Exception as e:
             logging.exception("Prediction failed")
             raise CustomException(e, sys)
+
+    def predict_with_assessment(
+        self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        preds = self.predict(X)
+        output: List[Dict[str, Any]] = []
+        for raw_pred in preds:
+            pred = float(raw_pred)
+            risk_prob = self._risk_probability(pred)
+            output.append(
+                {
+                    "score_prediction": pred,
+                    "score_range": list(self._score_range(pred)),
+                    "performance_band": self._performance_band(pred),
+                    "risk_probability": risk_prob,
+                    "risk_tier": self._risk_tier(risk_prob),
+                }
+            )
+        return output

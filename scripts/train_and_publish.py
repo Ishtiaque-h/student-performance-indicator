@@ -71,6 +71,7 @@ def main() -> None:
     files = [
         "model.pkl",
         "preprocessor.pkl",
+        "pipeline.pkl",
         "model_report.json",
         "ingestion_meta.json",
     ]

@@ -1,10 +1,28 @@
+import os
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
+
 from student_performance.api import app
+from student_performance.pipeline.train_pipeline import TrainPipeline
 
-client = TestClient(app)
+
+@pytest.fixture(scope="module")
+def client():
+    repo_root = Path(__file__).resolve().parents[1]
+    original_cwd = Path.cwd()
+    os.chdir(repo_root)
+    TrainPipeline().run()
+
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        os.chdir(original_cwd)
 
 
-def test_valid_prediction():
+def test_valid_prediction(client: TestClient):
     """Test valid prediction request."""
     response = client.post(
         "/predict",
@@ -23,7 +41,7 @@ def test_valid_prediction():
     assert isinstance(data["prediction"], (int, float))
 
 
-def test_empty_field_validation():
+def test_empty_field_validation(client: TestClient):
     """Test rejection of empty fields."""
     response = client.post(
         "/predict",
@@ -41,7 +59,7 @@ def test_empty_field_validation():
     assert "empty" in response.json()["detail"].lower()
 
 
-def test_invalid_category():
+def test_invalid_category(client: TestClient):
     """Test rejection of invalid category values."""
     response = client.post(
         "/predict",
@@ -60,7 +78,7 @@ def test_invalid_category():
     assert "gender" in detail
 
 
-def test_case_insensitive_validation():
+def test_case_insensitive_validation(client: TestClient):
     """Test that validation is case-insensitive."""
     response = client.post(
         "/predict",
@@ -76,7 +94,7 @@ def test_case_insensitive_validation():
     assert response.status_code == 200
 
 
-def test_whitespace_trimming():
+def test_whitespace_trimming(client: TestClient):
     """Test that whitespace is trimmed."""
     response = client.post(
         "/predict",
@@ -92,7 +110,7 @@ def test_whitespace_trimming():
     assert response.status_code == 200
 
 
-def test_missing_field():
+def test_missing_field(client: TestClient):
     """Test rejection when required field is missing."""
     response = client.post(
         "/predict",
@@ -111,7 +129,7 @@ def test_missing_field():
     assert "test_preparation_course" in detail
 
 
-def test_extra_field():
+def test_extra_field(client: TestClient):
     """Test rejection when unexpected field is provided."""
     response = client.post(
         "/predict",
@@ -131,7 +149,7 @@ def test_extra_field():
     assert "age" in detail
 
 
-def test_batch_prediction():
+def test_batch_prediction(client: TestClient):
     """Test batch prediction endpoint."""
     response = client.post(
         "/predict_batch",
@@ -159,7 +177,7 @@ def test_batch_prediction():
     assert len(data["prediction"]) == 2
 
 
-def test_health_endpoint():
+def test_health_endpoint(client: TestClient):
     """Test health check endpoint."""
     response = client.get("/health")
 
@@ -169,7 +187,7 @@ def test_health_endpoint():
     assert data["pipeline_loaded"] is True
 
 
-def test_schema_endpoint():
+def test_schema_endpoint(client: TestClient):
     """Test schema endpoint returns feature info."""
     response = client.get("/schema")
 
@@ -180,7 +198,7 @@ def test_schema_endpoint():
     assert len(data["features"]) == 5
 
 
-def test_null_value():
+def test_null_value(client: TestClient):
     """Test rejection of null values."""
     response = client.post(
         "/predict",
@@ -196,7 +214,7 @@ def test_null_value():
     assert response.status_code == 422
 
 
-def test_whitespace_only_field():
+def test_whitespace_only_field(client: TestClient):
     """Test rejection of whitespace-only values."""
     response = client.post(
         "/predict",
