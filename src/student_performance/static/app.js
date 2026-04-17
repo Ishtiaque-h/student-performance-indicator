@@ -117,7 +117,7 @@ async function main() {
       }
 
       // Score is 0–100
-      const score = Math.round(body.prediction * 10) / 10;
+      const score = Math.round(body.score_prediction * 10) / 10;
       const pct = Math.min(Math.max(score, 0), 100);
 
       resultDiv.innerHTML = `
