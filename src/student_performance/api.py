@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
 
-import numpy as np
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -175,7 +174,9 @@ def health(request: Request) -> dict:
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(
-        "index.html", {"request": request, "app_title": APP_TITLE}
+        name="index.html",
+        context={"app_title": APP_TITLE},
+        request=request,
     )
 
 
@@ -276,8 +277,15 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
             payload, expected_features, preprocessor
         )
 
-        pred = pipeline.predict(normalized_payload)[0]
-        return {"prediction": float(pred)}
+        assessment = pipeline.predict_with_assessment(normalized_payload)[0]
+        score_prediction = float(assessment["score_prediction"])
+        return {
+            "risk_probability": float(assessment["risk_probability"]),
+            "risk_tier": assessment["risk_tier"],
+            "performance_band": assessment["performance_band"],
+            "score_range": [float(x) for x in assessment["score_range"]],
+            "score_prediction": score_prediction,
+        }
 
     except ValueError as e:
         logger.error(f"Validation error: {e}", exc_info=True)
@@ -310,9 +318,21 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
             for idx, item in enumerate(payload)
         ]
 
-        preds = pipeline.predict(normalized_items)
-        preds = np.asarray(preds).ravel()
-        return {"prediction": [float(x) for x in preds]}
+        assessments = pipeline.predict_with_assessment(normalized_items)
+        enriched_predictions = []
+        for assessment in assessments:
+            score_prediction = float(assessment["score_prediction"])
+            enriched_predictions.append(
+                {
+                    "risk_probability": float(assessment["risk_probability"]),
+                    "risk_tier": assessment["risk_tier"],
+                    "performance_band": assessment["performance_band"],
+                    "score_range": [float(x) for x in assessment["score_range"]],
+                    "score_prediction": score_prediction,
+                }
+            )
+
+        return {"predictions": enriched_predictions}
 
     except ValueError as e:
         logger.error(f"Validation error: {e}", exc_info=True)
