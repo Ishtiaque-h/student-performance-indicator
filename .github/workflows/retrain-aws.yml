@@ -26,6 +26,8 @@ jobs:
     env:
       ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
       ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_TASK_DEFINITION: ${{ vars.ECS_TASK_DEFINITION }}
+      CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
 
     steps:
       - uses: actions/checkout@v4
@@ -91,7 +93,8 @@ jobs:
               f.write(f"TEST_R2={test_r2}\n")
 
           if test_r2 < threshold:
-              sys.exit(f"Not promoting: test_r2={test_r2} < threshold={threshold}")
+              print(f"Not promoting: test_r2={test_r2} < threshold={threshold}")
+              sys.exit(1)
           PY
 
           # Write promoted URI pointer to S3 (equivalent of `gcloud storage cp` to GCS)
@@ -109,18 +112,119 @@ jobs:
           print(f"Promoted model URI written to s3://{bucket}/{key}: {run_uri}")
           PY
 
-      # Update ECS service with new model URI env var (equivalent of `gcloud run services update`)
+      # Update ECS task definition with latest promoted URI and roll out to staging.
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Update model URI in ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          environment-variables: |
+            S3_ARTIFACTS_URI=${{ env.RUN_URI }}
+            FORCE_MODEL_DOWNLOAD=1
+            ARTIFACTS_DIR=/tmp/artifacts
+
       - name: Rollout to ECS Staging
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Resolve deployed URL
         shell: bash
         run: |
           set -euo pipefail
-          echo "Updating ECS service ${ECS_SERVICE} with new model URI: ${RUN_URI}"
+          python - <<'PY'
+          import boto3
+          import os
+          import sys
 
-          # Force a new deployment with updated environment variable
-          aws ecs update-service \
-            --cluster "${ECS_CLUSTER}" \
-            --service "${ECS_SERVICE}" \
-            --force-new-deployment \
-            --region "${AWS_REGION}"
+          ecs = boto3.client("ecs", region_name=os.environ["AWS_REGION"])
+          elbv2 = boto3.client("elbv2", region_name=os.environ["AWS_REGION"])
+          cluster = os.environ["ECS_CLUSTER"]
+          service = os.environ["ECS_SERVICE"]
 
-          echo "ECS service update triggered successfully"
+          resp = ecs.describe_services(cluster=cluster, services=[service])
+          services = resp.get("services", [])
+          if not services:
+              print(f"ERROR: ECS service not found: {service}")
+              sys.exit(1)
+
+          lbs = services[0].get("loadBalancers", [])
+          if not lbs:
+              print("ERROR: ECS service has no load balancer; cannot determine deployed URL.")
+              sys.exit(1)
+
+          target_group_arn = lbs[0].get("targetGroupArn")
+          tgs = elbv2.describe_target_groups(TargetGroupArns=[target_group_arn])["TargetGroups"]
+          lb_arns = tgs[0].get("LoadBalancerArns", [])
+          if not lb_arns:
+              print("ERROR: Target group has no load balancer ARN; cannot determine deployed URL.")
+              sys.exit(1)
+
+          lb = elbv2.describe_load_balancers(LoadBalancerArns=[lb_arns[0]])["LoadBalancers"][0]
+          dns_name = lb["DNSName"]
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"DEPLOYED_DNS={dns_name}\n")
+          print(f"Resolved deployed DNS: {dns_name}")
+          PY
+
+      - name: Post-deploy smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL=""
+          for scheme in https http; do
+            candidate="${scheme}://${DEPLOYED_DNS}"
+            if curl -fsS "${candidate}/health" >/tmp/health.json; then
+              BASE_URL="${candidate}"
+              break
+            fi
+          done
+
+          if [ -z "${BASE_URL}" ]; then
+            echo "ERROR: unable to reach deployed service via http/https for DNS ${DEPLOYED_DNS}"
+            exit 1
+          fi
+
+          echo "BASE_URL=${BASE_URL}" >> "$GITHUB_ENV"
+          echo "Using base URL: ${BASE_URL}"
+          echo "Deployed URL: ${BASE_URL}"
+
+          HTTP_CODE="$(curl -sS -o /tmp/predict.json -w "%{http_code}" \
+            -X POST "${BASE_URL}/predict" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "gender":"female",
+              "race_ethnicity":"group B",
+              "parental_level_of_education":"bachelor'\''s degree",
+              "lunch":"standard",
+              "test_preparation_course":"none"
+            }')"
+
+          if [ "${HTTP_CODE}" -ne 200 ]; then
+            echo "ERROR: /predict did not return 200"
+            cat /tmp/predict.json
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          obj = json.load(open("/tmp/predict.json"))
+          assert "score_prediction" in obj, obj
+          PY
+
+      - name: Deployment complete
+        run: |
+          echo "Staging deployment complete — Deployed URL: ${BASE_URL}"
