@@ -1,4 +1,4 @@
-# 🎓 Student Performance Predictor — Practical End-to-End MLOps
+# 🎓 Student Performance Predictor — End-to-End MLOps
 
 [![CI](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/ci.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/ci.yml)
 [![Staging Deploy](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/deploy.yml)
@@ -6,139 +6,171 @@
 [![Retrain](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/retrain.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/retrain.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-A production-oriented ML system that predicts student **math score** from enrollment-time attributes, with reproducible training, staged deployment, and artifact promotion.
+An end-to-end ML system that classifies student `who needs support` from enrollment-time attributes, with reproducible training, staged deployment, and artifact promotion. **Monitoring is being added as part of the next phase of development.**
 
 🔗 **Live API**: https://student-performance-api-654581958038.us-central1.run.app
 
 ---
 
-## 1) ML framing and intuition
+## 1) Problem framing and deployment context
 
-### Problem
-Predict math score (0–100) using only features available **before exams**:
-- gender
-- race/ethnicity
-- parental level of education
-- lunch
-- test preparation course
+This pre-exam/ enrollment early warning system performs risk-first classification and performance band prediction with optional math score estimate as secondary to support **early academic-risk screening**.  
+It is a **predictive** model aligned with real decisions - `who needs help?`, not a causal estimator, and should not be interpreted as proving why outcomes happen. Better suited to limited feature signal in this dataset.
 
-Dataset: [Students Performance in Exams (Kaggle)](https://www.kaggle.com/datasets/spscientist/students-performance-in-exams)
+- **Objective:** risk classification + performance bands (primary), with optional score estimate as secondary. from pre-exam attributes available at enrollment.
+- **Decision context:** support early intervention planning (high-risk students first), not final grading or disciplinary actions. Math underperformance also signals high-risk students.
+- **Governance:** fairness checks by subgroup, strict anti-leakage feature policy, periodic retraining with drift checks
+- **Data source:** [Students Performance in Exams (Kaggle)](https://www.kaggle.com/datasets/spscientist/students-performance-in-exams)
 
-### Why this feature set is intentional
-`reading_score` and `writing_score` are excluded from training and serving because they are measured in the same sitting as math score. They are highly predictive but unavailable at real decision time, so including them would create target leakage and unrealistic performance.
+### Serving feature set (enrollment-time):
+- `gender`
+- `race_ethnicity`
+- `parental_level_of_education`
+- `lunch`
+- `test_preparation_course`
 
-### Practical expectation for model quality
-With only 5 categorical enrollment-time features, predictive signal is real but limited. Moderate R² is expected. This project uses a quality gate (`test_r2 >= 0.10`) to reject very weak models while staying realistic about the information available at inference time.
+### Prediction outputs (assessment layer)
+Primarily, the prediction pipeline computes:
+- `score_range`: bounded uncertainty interval around prediction (MAE-based)
+- `performance_band`: low/medium/high band from configured score cutoffs
+- `risk_probability`: smooth risk score around the configured risk threshold
+- `risk_tier`: low/medium/high operational risk tier from probability thresholds
 
----
-
-## 2) What is production-relevant here
-
-- **Promote, don’t retrain** for production: production serves the exact artifact validated in staging.
-- **Pipeline-only serving contract**: inference requires `pipeline.pkl` + metadata files.
-- **Dynamic validation**: API validates request fields/categories against the trained preprocessor schema.
-- **Artifact versioning in GCS**: immutable run-indexed artifacts + promoted pointer.
-- **Automated MLOps path**: CI → staging deploy/retrain → manual tag-triggered production deploy.
+Math `score_prediction` is also estimated as secondary.
 
 ---
 
-## 3) End-to-end lifecycle
+## 3) Feature policy and leakage control
 
-1. Train candidate model(s) and save artifacts.
-2. Evaluate with CV + holdout metrics; select best model.
-3. Publish run artifacts to GCS run index (`latest/<run_id>/...`).
-4. Gate candidate in retrain workflow (`test_r2` threshold).
-5. Write promoted pointer (`promoted/latest_uri.txt`).
-6. Production CD reads pointer and deploys the exact promoted artifact set.
+`reading_score` and `writing_score` are intentionally excluded because they are same-sitting outcomes with `math_score`, not enrollment-time inputs.
 
-This avoids training-time randomness between staging and production.
+- Config-level policy: `CONFIG.dataset.drop_cols = ["reading_score", "writing_score"]`
+- Training path applies this drop policy before fitting
+- Prediction path also drops these columns if provided accidentally
 
----
-
-## 4) Model development approach
-
-### Models evaluated
-- Dummy (mean baseline)
-- LinearRegression, Ridge, Lasso
-- KNN, DecisionTree, RandomForest
-- AdaBoost, GradientBoosting
-- XGBoost (optional), CatBoost (optional)
-
-### Selection strategy
-- 5-fold CV scoring (`r2`)
-- Two-stage tuning: RandomizedSearchCV → refined GridSearchCV
-- Best model selected by CV-preferred criterion (not direct test-set overfitting)
-- Reported metrics: R², MAE, RMSE
-
-### Preprocessing
-- Categorical: most-frequent imputation + one-hot encoding (`handle_unknown='ignore'`)
-- Numeric (if present): median imputation + standard scaling
+If leakage features were included, performance would look much higher, but that uplift would be non-deployable and misleading for the real enrollment-time use case.
 
 ---
 
-## EDA quality and practical interpretation
+## 4) EDA findings that drive model design
 
-The EDA work is documented in **[notebooks/EDA_student_performance.ipynb](./notebooks/EDA_student_performance.ipynb)** and emphasizes decision-useful interpretation (not only plots), including leakage checks, subgroup comparisons, and deploy-time feature reasoning.
+EDA reference: [`notebooks/EDA_student_performance.ipynb`](./notebooks/EDA_student_performance.ipynb)
 
-Examples of practical takeaways from EDA:
-- large performance gap by lunch type (~11-point mean math gap),
-- measurable prep-course lift (~5–7 points depending on subgroup),
-- strong reading/writing correlation with math (`r ≈ 0.8`), used to justify leakage-aware feature exclusion.
+Decision-useful (deployable) observations:
+- **Lunch effect is very strong:** mean math score gap is ~11 points (standard ≈ 70.0 vs free/reduced ≈ 58.9).
+- **Test-preparation completion aligns with improved math outcomes:** completed prep gives ~5–7 point mean lift (larger lift in free/reduced subgroup).
+- **Risk segmentation insight:** low-math rate (<50) is much higher in free/reduced lunch (~27%) vs standard (~6%).
+- Parental education level and group-level patterns provide usable pre-exam signal.
+
+Diagnostic-only observation:
+- math has strong correlation with reading/writing, but those are **not serving features** due to leakage risk.
+- reading/writing correlate strongly with math (r ≈ 0.82, w ≈ 0.80) — supports excluding them in deploy-time modeling.
 
 ---
 
-## 5) Artifact contract (important)
+## 5) Modeling/evaluation and metric interpretation
 
-### Training outputs
-Training currently writes:
-- `pipeline.pkl` (required for serving)
-- `model_report.json`
-- `ingestion_meta.json`
-- `model.pkl` and `preprocessor.pkl` (kept as auxiliary artifacts)
+Training notebook: [`notebooks/model_training.ipynb`](./notebooks/model_training.ipynb)
 
-### Serving requirement
-Serving is pipeline-first and expects:
+Model family comparison includes baseline, linear, tree, ensemble, and optional boosted models.  
+Given only five categorical pre-exam features, **moderate** predictive strength is expected; simpler linear models can be competitive and easier to interpret/operate.
+
+Selection principle:
+- CV-first model selection (5-fold `r2`)
+- holdout test metrics for final reporting (`R²`, `MAE`, `RMSE`)
+
+### Results snapshot (example run)
+- Best model (CV-selected): Lasso
+- CV R²: 0.244
+- Test R²: 0.165
+- Test MAE: 11.364
+- Test RMSE: 14.251
+- Quality gate (`test_r2 >= 0.10`): pass
+
+![Example run: test R² by model](./docs/results/test_r2_by_model_example.png)
+
+Detailed metrics artifact: [`docs/results/model_report_example.json`](./docs/results/model_report_example.json)
+
+### Metric meaning for stakeholders
+- **R²:** share of score variance explained versus mean-only prediction
+- **MAE:** average absolute error in score points (typical miss size)
+- **RMSE:** error magnitude with stronger penalty for larger misses
+
+Quality gate rationale (`test_r2 >= 0.10`): With only 5 categorical enrollment-time features, predictive signal is real but limited. Moderate R² is expected. This project rejects weak candidates while staying realistic about the information available at inference time.
+
+---
+
+## 6) Artifact contract and serving behavior
+
+Required serving artifacts:
 - `pipeline.pkl`
 - `model_report.json`
 - `ingestion_meta.json`
 
-No fallback to `preprocessor.pkl + model.pkl` is used in inference serving path.
+`pipeline.pkl` is the primary inference artifact, keeping preprocessing + model coupled to prevent train/serve skew.
+
+Reliability implications:
+- reproducible deployment from immutable run artifacts
+- safer rollback by switching promoted artifact URI
+- no production retraining during deploy
 
 ---
 
-## 6) API behavior
+## 7) API validation and reliability
 
-### Core endpoints
-- `GET /health` — service health + pipeline state
-- `GET /schema` — learned input schema/categories
-- `GET /meta` — artifact/source metadata
-- `GET /model_info` — selected model metrics from report
-- `POST /predict` — single prediction
-- `POST /predict_batch` — batch prediction
+Core endpoints:
+- `GET /health`
+- `GET /schema`
+- `GET /meta`
+- `GET /model_info`
+- `POST /predict`
+- `POST /predict_batch`
 
-### Validation behavior
-- Required fields enforced
-- Unexpected fields rejected
-- Strings normalized (`strip + lowercase`)
-- Whitespace-only / null values rejected
-- Category values checked against trained categories
-- Optional numeric range guards via config
+Validation as ML input-quality control:
+- required-field enforcement
+- unknown-field rejection
+- normalization (`strip + lowercase`)
+- null/empty rejection
+- category membership checks from trained encoder categories
+- optional numeric range guards from config
 
----
+Strict rejection on invalid inputs improves serving reliability by preventing silent schema drift and nonsensical predictions.
 
-## 7) Workflows
-
-- `ci.yml`: lint + format + smoke tests on PR/push
-- `deploy.yml`: train + publish + deploy to staging after CI on `main`
-- `retrain.yml`: scheduled/manual retrain, gate, promote pointer, rollout to staging
-- `cd-cloudrun.yml`: tag-triggered production deploy from promoted pointer
-
-### Required cloud contracts
-These workflows require correct GitHub variables/secrets and GCP setup (WIF, service accounts, project/region/service/repository, GCS URIs). Local checks can be green while cloud workflows still fail if env/secrets are missing or mismatched.
+Assessment logic for `score_range`, `performance_band`, `risk_probability`, and `risk_tier` is implemented in the prediction pipeline and controlled by product thresholds in config.
 
 ---
 
-## 8) Quickstart
+## 8) MLOps lifecycle (CI/CD/retrain/promotion)
+
+Shared ML contract across cloud targets: train candidate → evaluate/gate → publish/promote artifact pointer → deploy serving app with promoted artifact URI (`gs://...` or `s3://...`).
+
+Lifecycle:
+1. Train candidate and produce artifacts
+2. Evaluate and apply quality gate
+3. Publish run-indexed artifacts
+4. Update promotion pointer (`promoted/latest_uri.txt`) on pass
+5. Deploy production from promoted artifact (not from fresh retraining)
+
+Workflow governance view:
+- `ci.yml`: proves code quality and smoke-level functional integrity on change
+- `deploy.yml`: proves staging deploy from a run-specific candidate artifact
+- `retrain.yml`: proves scheduled/manual retrain + gating + promotion pointer update
+- `cd-cloudrun.yml`: proves production deploy consumes promoted pointer and validates required artifacts
+
+AWS deployment variant is maintained in branch `aws-deployment`, while this branch contains the GCP workflow files above; both follow the same artifact/promotion contract.
+
+---
+
+## 9) Limitations, ethics, and future work
+
+- Uses demographic/proxy features; subgroup fairness risks must be assessed before operational use.
+- Not for high-stakes automated decisions (discipline, admissions, punitive actions).
+- Predictive outputs should support human-in-the-loop triage, not replace educators.
+- **Next phase of ongoing development:** subgroup fairness analysis, drift monitoring, post-deploy performance tracking/calibration.
+
+---
+
+## 10) Quickstart + verification commands
 
 ### Local setup
 ```bash
@@ -152,7 +184,7 @@ pip install -e ".[all]"
 ### Train locally
 ```bash
 python scripts/train_and_publish.py \
-  --registry-uri gs://YOUR-BUCKET/student-performance \
+  --registry-uri <gs://YOUR-BUCKET/student-performance or s3://YOUR-BUCKET/student-performance> \
   --index-latest
 ```
 
@@ -175,11 +207,7 @@ curl -X POST http://localhost:8000/predict \
   }'
 ```
 
----
-
-## 9) Validation commands
-
-From repo root:
+### Verification commands (repo root)
 
 ```bash
 ruff check src tests scripts
@@ -190,45 +218,50 @@ python -m pytest -q
 
 ---
 
-## 10) Project structure (current)
+## 11) Evidence map
 
-```text
-student-performance-indicator/
-├── .github/workflows/
-├── data/
-├── notebooks/
-├── scripts/
-├── src/student_performance/
-│   ├── api.py
-│   ├── modeling.py
-│   ├── artifacts_gcs.py
-│   ├── components/
-│   ├── pipeline/
-│   ├── registry/
-│   ├── mlops/
-│   ├── templates/
-│   └── static/
-├── tests/
-├── Dockerfile
-├── pyproject.toml
-└── README.md
-```
+| README claim | Evidence |
+|---|---|
+| Enrollment-time objective and leakage-aware feature policy | [`src/student_performance/components/config.py`](./src/student_performance/components/config.py) |
+| Leak columns dropped in train and serve paths | [`src/student_performance/components/data_transformation.py`](./src/student_performance/components/data_transformation.py), [`src/student_performance/pipeline/predict_pipeline.py`](./src/student_performance/pipeline/predict_pipeline.py) |
+| Enriched prediction outputs (`score_range`, `performance_band`, `risk_probability`, `risk_tier`) | [`src/student_performance/pipeline/predict_pipeline.py`](./src/student_performance/pipeline/predict_pipeline.py), [`src/student_performance/components/config.py`](./src/student_performance/components/config.py) |
+| Pipeline-first serving + required artifacts | [`src/student_performance/pipeline/predict_pipeline.py`](./src/student_performance/pipeline/predict_pipeline.py) |
+| API validation behavior | [`src/student_performance/api.py`](./src/student_performance/api.py), [`tests/test_api_validation.py`](./tests/test_api_validation.py) |
+| CV-first model selection configuration | [`src/student_performance/components/config.py`](./src/student_performance/components/config.py), [`src/student_performance/modeling.py`](./src/student_performance/modeling.py) |
+| Candidate training and artifact generation | [`src/student_performance/pipeline/train_pipeline.py`](./src/student_performance/pipeline/train_pipeline.py), [`scripts/train_and_publish.py`](./scripts/train_and_publish.py) |
+| CI quality checks | [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) |
+| Staging candidate train/deploy flow | [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml) |
+| Retrain, gate, promote pointer | [`.github/workflows/retrain.yml`](./.github/workflows/retrain.yml) |
+| Production deploy from promoted pointer | [`.github/workflows/cd-cloudrun.yml`](./.github/workflows/cd-cloudrun.yml) |
+| EDA interpretation support | [`notebooks/EDA_student_performance.ipynb`](./notebooks/EDA_student_performance.ipynb) |
+| Model training analysis support | [`notebooks/model_training.ipynb`](./notebooks/model_training.ipynb) |
+
+### Minimum reproducible run path
+1. Train and publish locally:
+   `python scripts/train_and_publish.py --registry-uri <gs://... or s3://...> --index-latest`
+2. Inspect generated report:
+   `artifacts/model_report.json`
+3. Start API:
+   `uvicorn student_performance.api:app --reload --port 8000`
+4. Send a prediction request:
+   `POST /predict` with the five enrollment-time features
 
 ---
 
-## 11) Practical caveats
+## Acknowledgement
 
-- This is a strong MLOps learning system and practical template, but not a causal model of student outcomes.
-- Current monitoring is deployment-health oriented; online drift/performance monitoring can be added later.
-- Performance interpretation should always be tied to the deployment-time feature availability constraint.
-- For AWS-focused deployment work (AWS-oriented infra/deployment variant of this project), see the concise alternative implementation track in the **`aws-deployment`** branch.
+AI tools (Claude, GitHub Copilot) were used ethically for project design, analysis, and documentation.
 
 ---
 
 ## License
 MIT — see [LICENSE](LICENSE)
 
+---
+
 ## Author
-**Md Ishtiaque Hossain**
-- GitHub: [@Ishtiaque-h](https://github.com/Ishtiaque-h)
-- LinkedIn: [@ishtiaque-h](https://linkedin.com/in/ishtiaque-h)
+
+Md Ishtiaque Hossain \
+MSc, Computer and Information Sciences \
+University of Delaware \
+[LinkedIn](https://linkedin.com/in/ishtiaque-h) · [GitHub](https://github.com/Ishtiaque-h)
