@@ -104,5 +104,93 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
 
+      - name: Resolve deployed URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import boto3
+          import os
+          import sys
+
+          ecs = boto3.client("ecs", region_name=os.environ["AWS_REGION"])
+          elbv2 = boto3.client("elbv2", region_name=os.environ["AWS_REGION"])
+          cluster = os.environ["ECS_CLUSTER"]
+          service = os.environ["ECS_SERVICE"]
+
+          resp = ecs.describe_services(cluster=cluster, services=[service])
+          services = resp.get("services", [])
+          if not services:
+              print(f"ERROR: ECS service not found: {service}")
+              sys.exit(1)
+
+          lbs = services[0].get("loadBalancers", [])
+          if not lbs:
+              print("ERROR: ECS service has no load balancer; cannot determine deployed URL.")
+              sys.exit(1)
+
+          target_group_arn = lbs[0].get("targetGroupArn")
+          tgs = elbv2.describe_target_groups(TargetGroupArns=[target_group_arn])["TargetGroups"]
+          lb_arns = tgs[0].get("LoadBalancerArns", [])
+          if not lb_arns:
+              print("ERROR: Target group has no load balancer ARN; cannot determine deployed URL.")
+              sys.exit(1)
+
+          lb = elbv2.describe_load_balancers(LoadBalancerArns=[lb_arns[0]])["LoadBalancers"][0]
+          dns_name = lb["DNSName"]
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"DEPLOYED_DNS={dns_name}\n")
+          print(f"Resolved deployed DNS: {dns_name}")
+          PY
+
+      - name: Post-deploy smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL=""
+          for scheme in https http; do
+            candidate="${scheme}://${DEPLOYED_DNS}"
+            if curl -fsS "${candidate}/health" >/tmp/health.json; then
+              BASE_URL="${candidate}"
+              break
+            fi
+          done
+
+          if [ -z "${BASE_URL}" ]; then
+            echo "ERROR: unable to reach deployed service via http/https for DNS ${DEPLOYED_DNS}"
+            exit 1
+          fi
+
+          echo "BASE_URL=${BASE_URL}" >> "$GITHUB_ENV"
+          echo "Using base URL: ${BASE_URL}"
+          echo "Deployed URL: ${BASE_URL}"
+
+          HTTP_CODE="$(curl -sS -o /tmp/predict.json -w "%{http_code}" \
+            -X POST "${BASE_URL}/predict" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "gender":"female",
+              "race_ethnicity":"group B",
+              "parental_level_of_education":"bachelor'\''s degree",
+              "lunch":"standard",
+              "test_preparation_course":"none"
+            }')"
+
+          if [ "${HTTP_CODE}" -ne 200 ]; then
+            echo "ERROR: /predict did not return 200"
+            cat /tmp/predict.json
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          obj = json.load(open("/tmp/predict.json"))
+          assert "score_prediction" in obj, obj
+          PY
+
       - name: Deployment complete
-        run: echo "Deployed image ${{ env.IMAGE_URI }} to ECS service ${{ env.ECS_SERVICE }}"
+        run: |
+          echo "Deployed image ${{ env.IMAGE_URI }} to ECS service ${{ env.ECS_SERVICE }}"
+          echo "Deployed URL: ${BASE_URL}"
