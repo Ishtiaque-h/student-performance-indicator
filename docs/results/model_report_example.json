@@ -1,0 +1,55 @@
+{
+  "note": "Example local run metrics generated from scripts/train_and_publish.py pipeline. Values can vary by environment/dependency versions.",
+  "best_model": {
+    "name": "Lasso",
+    "selection_source": "grid_cv",
+    "selection_score": 0.24406459055346308,
+    "test_r2": 0.1653811166656607,
+    "test_mae": 11.36443416244255,
+    "test_rmse": 14.251134119092585
+  },
+  "models": {
+    "Ridge": {
+      "test_r2": 0.17558734144332455,
+      "test_mae": 11.285701323363583,
+      "test_rmse": 14.163730344542984,
+      "cv_best_score": 0.24377489391860713
+    },
+    "Lasso": {
+      "test_r2": 0.1653811166656607,
+      "test_mae": 11.36443416244255,
+      "test_rmse": 14.251134119092585,
+      "cv_best_score": 0.24406459055346308
+    },
+    "KNN": {
+      "test_r2": 0.023637021784183587,
+      "test_mae": 12.309444444444445,
+      "test_rmse": 15.413844586548537,
+      "cv_best_score": 0.15246959398258936
+    },
+    "DecisionTree": {
+      "test_r2": 0.09119731111000362,
+      "test_mae": 11.580407071611617,
+      "test_rmse": 14.870998360237603,
+      "cv_best_score": 0.09076243095005047
+    },
+    "RandomForest": {
+      "test_r2": 0.13453348220329175,
+      "test_mae": 11.486428289842404,
+      "test_rmse": 14.51210659050651,
+      "cv_best_score": 0.21094508020202002
+    },
+    "AdaBoost": {
+      "test_r2": 0.1283556573797625,
+      "test_mae": 11.49416585601134,
+      "test_rmse": 14.563809244227981,
+      "cv_best_score": 0.2030855039103839
+    },
+    "GradientBoosting": {
+      "test_r2": 0.14735868762479798,
+      "test_mae": 11.441910304347491,
+      "test_rmse": 14.404179002195226,
+      "cv_best_score": 0.22723276238107112
+    }
+  }
+}
