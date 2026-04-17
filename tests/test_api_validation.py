@@ -37,8 +37,19 @@ def test_valid_prediction(client: TestClient):
 
     assert response.status_code == 200
     data = response.json()
-    assert "prediction" in data
-    assert isinstance(data["prediction"], (int, float))
+    assert set(data.keys()) == {
+        "risk_probability",
+        "risk_tier",
+        "performance_band",
+        "score_range",
+        "score_prediction",
+    }
+    assert isinstance(data["score_prediction"], (int, float))
+    assert isinstance(data["score_range"], list)
+    assert len(data["score_range"]) == 2
+    assert data["risk_tier"] in {"low", "medium", "high"}
+    assert data["performance_band"] in {"low", "medium", "high"}
+    assert 0.0 <= float(data["risk_probability"]) <= 1.0
 
 
 def test_empty_field_validation(client: TestClient):
@@ -173,8 +184,24 @@ def test_batch_prediction(client: TestClient):
 
     assert response.status_code == 200
     data = response.json()
-    assert "prediction" in data
-    assert len(data["prediction"]) == 2
+    assert "predictions" in data
+    assert isinstance(data["predictions"], list)
+    assert len(data["predictions"]) == 2
+
+    for item in data["predictions"]:
+        assert set(item.keys()) == {
+            "risk_probability",
+            "risk_tier",
+            "performance_band",
+            "score_range",
+            "score_prediction",
+        }
+        assert isinstance(item["score_prediction"], (int, float))
+        assert item["risk_tier"] in {"low", "medium", "high"}
+        assert item["performance_band"] in {"low", "medium", "high"}
+        assert 0.0 <= float(item["risk_probability"]) <= 1.0
+        assert isinstance(item["score_range"], list)
+        assert len(item["score_range"]) == 2
 
 
 def test_health_endpoint(client: TestClient):
