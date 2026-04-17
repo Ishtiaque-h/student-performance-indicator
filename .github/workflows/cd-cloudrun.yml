@@ -166,7 +166,7 @@ jobs:
           # ---- Health must be 200 ----
           curl -fsS "${SERVICE_URL}/health" | tee /tmp/health.json
 
-          # ---- Happy-path predict must be 200 and contain prediction ----
+          # ---- Happy-path predict must be 200 and contain score_prediction ----
           HTTP_CODE="$(curl -sS -o /tmp/predict.json -w "%{http_code}" \
             -X POST "${SERVICE_URL}/predict" \
             -H "Content-Type: application/json" \
@@ -189,7 +189,7 @@ jobs:
           python - <<'PY'
           import json
           obj = json.load(open("/tmp/predict.json"))
-          assert "prediction" in obj, obj
+          assert "score_prediction" in obj, obj
           PY
 
           # ---- Negative schema check should return 422 (or 400 depending on your design) ----
