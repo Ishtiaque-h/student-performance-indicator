@@ -35,12 +35,19 @@ Primarily, the prediction pipeline computes:
 - `performance_band`: low/medium/high band from configured score cutoffs
 - `risk_probability`: smooth risk score around the configured risk threshold
 - `risk_tier`: low/medium/high operational risk tier from probability thresholds
+- `score_prediction`: math score (0-100) is also estimated as secondary.
 
-Math `score_prediction` is also estimated as secondary.
+### Default operational thresholds (from `CONFIG.product`):
+- `risk_threshold_score = 50.0`
+- `risk_probability_scale = 10.0`
+- `risk_tier_medium_min = 0.40`
+- `risk_tier_high_min = 0.70`
+- `performance_band_low_max = 50.0`
+- `performance_band_medium_max = 70.0`
 
 ---
 
-## 3) Feature policy and leakage control
+## 2) Feature policy and leakage control
 
 `reading_score` and `writing_score` are intentionally excluded because they are same-sitting outcomes with `math_score`, not enrollment-time inputs.
 
@@ -52,7 +59,7 @@ If leakage features were included, performance would look much higher, but that 
 
 ---
 
-## 4) EDA findings that drive model design
+## 3) EDA findings that drive model design
 
 EDA reference: [`notebooks/EDA_student_performance.ipynb`](./notebooks/EDA_student_performance.ipynb)
 
@@ -68,7 +75,7 @@ Diagnostic-only observation:
 
 ---
 
-## 5) Modeling/evaluation and metric interpretation
+## 4) Modeling/evaluation and metric interpretation
 
 Training notebook: [`notebooks/model_training.ipynb`](./notebooks/model_training.ipynb)
 
@@ -100,7 +107,7 @@ Quality gate rationale (`test_r2 >= 0.10`): With only 5 categorical enrollment-t
 
 ---
 
-## 6) Artifact contract and serving behavior
+## 5) Artifact contract and serving behavior
 
 Required serving artifacts:
 - `pipeline.pkl`
@@ -156,6 +163,7 @@ Workflow governance view:
 - `deploy.yml`: proves staging deploy from a run-specific candidate artifact
 - `retrain.yml`: proves scheduled/manual retrain + gating + promotion pointer update
 - `cd-cloudrun.yml`: proves production deploy consumes promoted pointer and validates required artifacts
+- release tag convention: use `v*` for GCP production CD and `aws-v*` for AWS production CD
 
 AWS deployment variant is maintained in branch `aws-deployment`, while this branch contains the GCP workflow files above; both follow the same artifact/promotion contract.
 
