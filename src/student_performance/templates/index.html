@@ -122,11 +122,11 @@
     /* Result */
     .result-idle { color: #a0aec0; font-size: 0.95rem; }
 
-    .result-score {
+    .result-risk {
       text-align: center;
       padding: 16px 0 8px;
     }
-    .result-score .score-label {
+    .result-risk .risk-label {
       font-size: 0.8rem;
       font-weight: 600;
       text-transform: uppercase;
@@ -134,17 +134,21 @@
       color: #718096;
       margin-bottom: 6px;
     }
-    .result-score .score-value {
-      font-size: 3.5rem;
+    .result-risk .risk-value {
+      font-size: 2.6rem;
       font-weight: 800;
       color: #4f46e5;
       line-height: 1;
     }
-    .result-score .score-unit {
+    .result-risk .risk-unit {
       font-size: 1rem;
       color: #718096;
       margin-top: 4px;
     }
+    .risk-low { color: #059669 !important; }
+    .risk-medium { color: #d97706 !important; }
+    .risk-high { color: #dc2626 !important; }
+    .risk-na { color: #4f46e5 !important; }
 
     /* Score bar */
     .score-bar-wrap {
@@ -212,7 +216,7 @@
 
     <div class="header">
       <h1>🎓 {{ app_title }}</h1>
-      <p>Predict a student's math score from demographic factors · <a href="/docs">API docs</a></p>
+      <p>Assess a student's performance risk from demographic factors · <a href="/docs">API docs</a></p>
     </div>
 
     <div class="card">
@@ -220,13 +224,13 @@
       <div id="form"></div>
       <button id="submit">
         <div class="spinner"></div>
-        <span class="btn-text">Predict Score</span>
+        <span class="btn-text">Assess Risk</span>
       </button>
     </div>
 
     <div class="card">
-      <h2>Prediction</h2>
-      <div id="result" class="result-idle">Fill in the details above and click Predict.</div>
+      <h2>Risk Assessment</h2>
+      <div id="result" class="result-idle">Fill in the details above and click Assess Risk.</div>
       <details>
         <summary>Raw API response</summary>
         <pre id="raw"></pre>
