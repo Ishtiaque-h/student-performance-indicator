@@ -246,11 +246,12 @@ jobs:
           fi
 
           python - <<'PY'
+          import json
           with open("/tmp/predict.json") as f:
               obj = json.load(f)
-          obj = json.load(open("/tmp/predict.json"))
           assert "score_prediction" in obj, obj
           PY
 
       - name: Deployment complete
-        run: 'echo "Staging deployment complete — Deployed URL: ${BASE_URL}"'
+        run: |
+          echo "Staging deployment complete - Deployed URL: ${BASE_URL}"
