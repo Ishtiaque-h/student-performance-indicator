@@ -12,6 +12,18 @@ function formatLabel(name) {
     .join(" ");
 }
 
+/**
+ * Clamp a numeric value onto the fixed UI score scale.
+ * @param {number} value
+ * @returns {number}
+ */
+function clampToScoreScale(value) {
+  return Math.min(Math.max(value, 0), 100);
+}
+
+// Centers the 2px range point on its exact scale position when min and max are equal.
+const SCORE_RANGE_POINT_OFFSET_PX = -1;
+
 function makeField(feature) {
   const wrapper = document.createElement("div");
   wrapper.className = "field";
@@ -117,8 +129,9 @@ async function main() {
       }
 
       // Score is 0–100; UI is risk-first with score as supporting detail
-      const score = Math.round(body.score_prediction * 10) / 10;
-      const pct = Math.min(Math.max(score, 0), 100);
+      const rawScore = Number(body.score_prediction);
+      const score = Math.round(rawScore * 10) / 10;
+      const pct = clampToScoreScale(score);
       const normalizedRiskTier = String(body.risk_tier || "n/a").toLowerCase();
       const riskTierLabel = normalizedRiskTier.toUpperCase();
       const riskClass = ["low", "medium", "high"].includes(normalizedRiskTier)
@@ -128,6 +141,27 @@ async function main() {
         body.risk_probability != null
           ? `${Math.round(Number(body.risk_probability) * 100)}%`
           : "n/a";
+      let scoreRangeLabel = "n/a";
+      let hasScoreRange = false;
+      let rangeStartPct = 0;
+      let rangeWidthPct = 0;
+      if (Array.isArray(body.score_range) && body.score_range.length === 2) {
+        const rawLower = Number(body.score_range[0]);
+        const rawUpper = Number(body.score_range[1]);
+        if (!Number.isFinite(rawLower) || !Number.isFinite(rawUpper)) {
+          hasScoreRange = false;
+        } else {
+          const lower = Math.min(rawLower, rawUpper);
+          const upper = Math.max(rawLower, rawUpper);
+          const clampedLower = clampToScoreScale(lower);
+          const clampedUpper = clampToScoreScale(upper);
+          scoreRangeLabel = `${clampedLower.toFixed(1)}–${clampedUpper.toFixed(1)}`;
+          hasScoreRange = true;
+          rangeStartPct = clampedLower;
+          rangeWidthPct = clampedUpper - clampedLower;
+        }
+      }
+      const rangePointClass = hasScoreRange && rangeWidthPct === 0 ? " range-point" : "";
 
       resultDiv.innerHTML = `
         <div class="result-risk">
@@ -140,15 +174,26 @@ async function main() {
           Performance Band: <strong>${body.performance_band || "n/a"}</strong>
         </div>
         <div class="score-bar-wrap">
+          <div class="score-range-band${hasScoreRange ? "" : " is-hidden"}${rangePointClass}" id="score-range-band"></div>
           <div class="score-bar" id="score-bar"></div>
+          <div class="score-marker" id="score-marker"></div>
         </div>
         <div class="score-range"><span>0</span><span>100</span></div>
+        <div class="score-scale-meta">Range: <strong>${scoreRangeLabel}</strong></div>
       `;
 
       // Animate bar after render
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           document.getElementById("score-bar").style.width = `${pct}%`;
+          document.getElementById("score-marker").style.left = `${pct}%`;
+          if (hasScoreRange) {
+            const rangeBand = document.getElementById("score-range-band");
+            rangeBand.style.left = `${rangeStartPct}%`;
+            rangeBand.style.width = rangeWidthPct === 0 ? "2px" : `${rangeWidthPct}%`;
+            rangeBand.style.transform =
+              rangeWidthPct === 0 ? `translateX(${SCORE_RANGE_POINT_OFFSET_PX}px)` : "none";
+          }
         });
       });
 
