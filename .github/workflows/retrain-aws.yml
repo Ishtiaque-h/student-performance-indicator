@@ -83,7 +83,8 @@ jobs:
           import json, os, sys
 
           report_path = os.path.join(os.environ["GITHUB_WORKSPACE"], "artifacts", "model_report.json")
-          report = json.load(open(report_path))
+          with open(report_path) as f:
+              report = json.load(f)
           test_r2 = report["best_model"]["test_r2"]
           threshold = float(os.environ.get("PROMOTE_IF_TEST_R2_AT_LEAST", "0.10"))
 
@@ -120,12 +121,24 @@ jobs:
             --query taskDefinition \
             > task-definition.json
 
+      - name: Resolve current container image
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_IMAGE="$(jq -r --arg NAME "${CONTAINER_NAME}" '.containerDefinitions[] | select(.name == $NAME) | .image' task-definition.json)"
+          if [ -z "${CURRENT_IMAGE}" ] || [ "${CURRENT_IMAGE}" = "null" ]; then
+            echo "ERROR: Could not resolve current image for container ${CONTAINER_NAME}"
+            exit 1
+          fi
+          echo "CURRENT_IMAGE=${CURRENT_IMAGE}" >> "$GITHUB_ENV"
+
       - name: Update model URI in ECS task definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.CURRENT_IMAGE }}
           environment-variables: |
             S3_ARTIFACTS_URI=${{ env.RUN_URI }}
             FORCE_MODEL_DOWNLOAD=1
@@ -233,11 +246,11 @@ jobs:
           fi
 
           python - <<'PY'
-          import json
+          with open("/tmp/predict.json") as f:
+              obj = json.load(f)
           obj = json.load(open("/tmp/predict.json"))
           assert "score_prediction" in obj, obj
           PY
 
       - name: Deployment complete
-        run: |
-          echo "Staging deployment complete — Deployed URL: ${BASE_URL}"
+        run: 'echo "Staging deployment complete — Deployed URL: ${BASE_URL}"'
