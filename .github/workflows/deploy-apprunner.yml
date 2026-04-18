@@ -1,0 +1,250 @@
+name: Deploy to App Runner (AWS Free Tier demo)
+
+# -----------------------------------------------------------------------
+# AWS FREE TIER NOTE
+# -----------------------------------------------------------------------
+# This workflow targets AWS App Runner which is much cheaper than the
+# ECS Fargate + ALB approach in deploy-aws.yml:
+#   - ECS Fargate + ALB: ~$23-31/month (ALB alone costs ~$16/month)
+#   - App Runner:        ~$0-5/month for a low-traffic demo
+#     * 0.25 vCPU @ $0.064/vCPU-hour, 0.5 GB @ $0.007/GB-hour
+#     * Auto-pause between requests → charged only when handling traffic
+#
+# AWS Free Tier eligible services used here:
+#   - ECR:  500 MB/month free (first 12 months)
+#   - S3:   5 GB free, 20 K GET, 2 K PUT (first 12 months)
+#   - IAM/STS: always free
+#
+# App Runner itself does NOT carry a compute-hours free-tier allowance,
+# but at demo-level traffic (a few stakeholder visits per day) the bill
+# is well below $5/month.
+# -----------------------------------------------------------------------
+
+on:
+  push:
+    branches:
+      - "aws-deployment"    # triggers on every push to the demo branch
+  workflow_dispatch:        # allows manual trigger from the Actions tab
+
+permissions:
+  contents: read
+  id-token: write           # required for GitHub OIDC → AWS IAM role assumption
+
+jobs:
+  deploy:
+    environment: staging-aws
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}                    # e.g. us-east-1
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}            # e.g. student-performance
+      APPRUNNER_SERVICE_NAME: ${{ vars.APPRUNNER_SERVICE_NAME }}  # e.g. student-performance-api
+      MODEL_REGISTRY_URI: ${{ vars.MODEL_REGISTRY_URI }}    # e.g. s3://bucket/student-performance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Authenticate to AWS using GitHub OIDC (no long-lived keys needed)
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[all]"
+
+      # Train and publish artifacts to S3
+      - name: Train & Publish to S3
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python scripts/train_and_publish.py \
+            --registry-uri "${MODEL_REGISTRY_URI}" \
+            --index-latest | tee publish.out
+
+          RUN_URI="$(grep '^RUN_URI=' publish.out | cut -d= -f2)"
+          echo "RUN_URI=${RUN_URI}" >> "$GITHUB_ENV"
+
+      # Log in to ECR and build/push the Docker image
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Image to ECR
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
+          docker build --build-arg INSTALL_EXTRAS=api,aws -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+
+      # Create the App Runner service on first run; update it on subsequent runs.
+      # The service exposes a stable HTTPS URL at no extra cost (no ALB needed).
+      - name: Create or update App Runner service
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          # App Runner requires an IAM role with AWSAppRunnerServicePolicyForECRAccess
+          # to pull images from ECR.  Create this role once (see README for instructions).
+          ECR_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/AppRunnerECRAccessRole"
+
+          IMAGE_CONFIG=$(python3 - <<PY
+          import json, os
+          print(json.dumps({
+            "Port": "8080",
+            "RuntimeEnvironmentVariables": {
+              "S3_ARTIFACTS_URI":    os.environ["RUN_URI"],
+              "FORCE_MODEL_DOWNLOAD": "1",
+              "ARTIFACTS_DIR":       "/tmp/artifacts",
+            },
+          }))
+          PY
+          )
+
+          # Check if the service already exists
+          SERVICE_ARN=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='${APPRUNNER_SERVICE_NAME}'].ServiceArn" \
+            --output text 2>/dev/null || true)
+
+          if [ -z "${SERVICE_ARN}" ]; then
+            echo "Creating new App Runner service: ${APPRUNNER_SERVICE_NAME}"
+
+            SOURCE_CONFIG=$(python3 - <<PY
+          import json, os
+          print(json.dumps({
+            "ImageRepository": {
+              "ImageIdentifier":    os.environ["IMAGE_URI"],
+              "ImageConfiguration": json.loads(os.environ["IMAGE_CONFIG"]),
+              "ImageRepositoryType": "ECR",
+            },
+            "AuthenticationConfiguration": {"AccessRoleArn": os.environ["ECR_ROLE"]},
+            "AutoDeploymentsEnabled": False,
+          }))
+          PY
+            )
+
+            OUTPUT=$(aws apprunner create-service \
+              --service-name "${APPRUNNER_SERVICE_NAME}" \
+              --source-configuration "${SOURCE_CONFIG}" \
+              --instance-configuration '{"Cpu":"0.25 vCPU","Memory":"0.5 GB"}' \
+              --health-check-configuration \
+                '{"Protocol":"HTTP","Path":"/health","Interval":10,"Timeout":5,"HealthyThreshold":1,"UnhealthyThreshold":5}')
+
+            SERVICE_ARN=$(echo "${OUTPUT}" | python3 -c \
+              "import sys,json; print(json.load(sys.stdin)['Service']['ServiceArn'])")
+          else
+            echo "Updating existing App Runner service: ${SERVICE_ARN}"
+
+            EXISTING_ROLE=$(aws apprunner describe-service \
+              --service-arn "${SERVICE_ARN}" \
+              --query 'Service.SourceConfiguration.AuthenticationConfiguration.AccessRoleArn' \
+              --output text)
+
+            SOURCE_CONFIG=$(python3 - <<PY
+          import json, os
+          print(json.dumps({
+            "ImageRepository": {
+              "ImageIdentifier":    os.environ["IMAGE_URI"],
+              "ImageConfiguration": json.loads(os.environ["IMAGE_CONFIG"]),
+              "ImageRepositoryType": "ECR",
+            },
+            "AuthenticationConfiguration": {"AccessRoleArn": os.environ["EXISTING_ROLE"]},
+            "AutoDeploymentsEnabled": False,
+          }))
+          PY
+            )
+
+            aws apprunner update-service \
+              --service-arn "${SERVICE_ARN}" \
+              --source-configuration "${SOURCE_CONFIG}"
+          fi
+
+          echo "SERVICE_ARN=${SERVICE_ARN}" >> "$GITHUB_ENV"
+
+      # Poll until the service reaches RUNNING (up to ~15 minutes)
+      - name: Wait for deployment and get stable URL
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Waiting for App Runner service to reach RUNNING state..."
+          for i in $(seq 1 30); do
+            STATUS=$(aws apprunner describe-service \
+              --service-arn "${SERVICE_ARN}" \
+              --query 'Service.Status' --output text)
+            echo "  Status: ${STATUS} (attempt ${i}/30)"
+            case "${STATUS}" in
+              RUNNING)          break ;;
+              *FAILED*|*DELETE*) echo "ERROR: service reached terminal state ${STATUS}"; exit 1 ;;
+            esac
+            sleep 30
+          done
+
+          SERVICE_URL=$(aws apprunner describe-service \
+            --service-arn "${SERVICE_ARN}" \
+            --query 'Service.ServiceUrl' --output text)
+
+          echo "DEPLOYED_URL=https://${SERVICE_URL}" >> "$GITHUB_ENV"
+          echo "Stable public URL: https://${SERVICE_URL}"
+
+      # Verify the deployment is healthy before finishing
+      - name: Post-deploy smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Waiting for health endpoint to respond..."
+          for i in $(seq 1 18); do
+            if curl -fsS "${DEPLOYED_URL}/health" >/tmp/health.json 2>/dev/null; then
+              break
+            fi
+            echo "  Attempt ${i}/18 — retrying in 10 s..."
+            sleep 10
+          done
+
+          echo "Health: $(cat /tmp/health.json)"
+
+          HTTP_CODE=$(curl -sS -o /tmp/predict.json -w "%{http_code}" \
+            -X POST "${DEPLOYED_URL}/predict" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "gender":"female",
+              "race_ethnicity":"group B",
+              "parental_level_of_education":"bachelor'\''s degree",
+              "lunch":"standard",
+              "test_preparation_course":"none"
+            }')
+
+          if [ "${HTTP_CODE}" -ne 200 ]; then
+            echo "ERROR: /predict returned HTTP ${HTTP_CODE}"
+            cat /tmp/predict.json
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          obj = json.load(open("/tmp/predict.json"))
+          assert "score_prediction" in obj, f"Missing score_prediction in response: {obj}"
+          print(f"Prediction OK — score_prediction={obj['score_prediction']}")
+          PY
+
+      - name: Deployment complete
+        run: |
+          echo "========================================================"
+          echo "  App Runner deployment complete"
+          echo "  Stable public URL: ${DEPLOYED_URL}"
+          echo "  Share this URL with stakeholders."
+          echo "========================================================"

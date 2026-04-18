@@ -169,6 +169,183 @@ AWS deployment variant is maintained in branch `aws-deployment`, while this bran
 
 ---
 
+## 8a) AWS Free Tier deployment guide (stakeholder demo)
+
+### Cost analysis of existing ECS Fargate approach
+
+The `deploy-aws.yml` workflow deploys to **ECS Fargate + Application Load Balancer**, which are **not** covered by the AWS Free Tier:
+
+| Service | Monthly cost | Free tier? |
+|---|---|---|
+| Application Load Balancer | ~$16/month minimum | ❌ No |
+| ECS Fargate (0.25 vCPU + 0.5 GB, always-on) | ~$7-15/month | ❌ No |
+| ECR (≤500 MB images) | Free | ✅ First 12 months |
+| S3 (≤5 GB artifacts) | Free | ✅ First 12 months |
+| **Total (ECS+ALB)** | **~$23-31/month** | |
+
+### Recommended free-tier path: AWS App Runner
+
+**AWS App Runner** (`deploy-apprunner.yml`) eliminates the ALB entirely. App Runner provides its own stable HTTPS endpoint at no extra cost:
+
+| Service | Monthly cost (demo-level traffic) | Free tier? |
+|---|---|---|
+| App Runner compute (0.25 vCPU + 0.5 GB, auto-paused) | ~$0-5/month | ⚠️ No standalone free tier, but auto-pause reduces cost to near zero between visits |
+| ECR (≤500 MB images) | Free | ✅ First 12 months |
+| S3 (≤5 GB artifacts) | Free | ✅ First 12 months |
+| **Total (App Runner)** | **~$0-5/month** | |
+
+App Runner **auto-pauses** the container when no requests arrive for a configured idle period, meaning you are only charged for actual compute time. For a stakeholder demo with a few visits per day the bill is typically under $3/month.
+
+The stable public URL format is:
+```
+https://<random-id>.<region>.awsapprunner.com
+```
+This URL **persists** unless you delete and recreate the service.
+
+### Required one-time AWS setup
+
+**1. ECR repository**
+```bash
+aws ecr create-repository --repository-name student-performance --region us-east-1
+```
+
+**2. S3 bucket for model artifacts**
+```bash
+aws s3 mb s3://your-bucket-name --region us-east-1
+```
+
+**3. IAM role for App Runner to pull from ECR**
+
+App Runner needs an access role with the managed policy `AWSAppRunnerServicePolicyForECRAccess`:
+```bash
+# Create the trust policy document
+cat > /tmp/apprunner-trust.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"Service": "build.apprunner.amazonaws.com"},
+    "Action": "sts:AssumeRole"
+  }]
+}
+EOF
+
+aws iam create-role \
+  --role-name AppRunnerECRAccessRole \
+  --assume-role-policy-document file:///tmp/apprunner-trust.json
+
+aws iam attach-role-policy \
+  --role-name AppRunnerECRAccessRole \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+```
+
+**4. IAM role for GitHub Actions (OIDC)**
+
+Create an IAM role that GitHub Actions can assume via OIDC. Attach these policies:
+- `AmazonEC2ContainerRegistryPowerUser` — push images to ECR
+- `AmazonAppRunnerFullAccess` — create/update App Runner services
+- `AmazonS3FullAccess` (or a scoped policy on your bucket) — read/write model artifacts
+
+**5. GitHub Actions repository variables** (`Settings → Secrets and variables → Actions → Variables`)
+
+| Variable | Example value |
+|---|---|
+| `AWS_REGION` | `us-east-1` |
+| `ECR_REPOSITORY` | `student-performance` |
+| `APPRUNNER_SERVICE_NAME` | `student-performance-api` |
+| `MODEL_REGISTRY_URI` | `s3://your-bucket-name/student-performance` |
+
+**GitHub Actions secret:**
+
+| Secret | Value |
+|---|---|
+| `AWS_IAM_ROLE_ARN` | `arn:aws:iam::<ACCOUNT_ID>:role/<GitHubActionsRole>` |
+
+### Deploying
+
+Push any commit to the `aws-deployment` branch (or trigger manually from the Actions tab):
+```bash
+git push origin aws-deployment
+```
+
+The `deploy-apprunner.yml` workflow will:
+1. Train and publish model artifacts to S3
+2. Build a Docker image and push it to ECR
+3. Create the App Runner service (first run) or update it (subsequent runs)
+4. Wait for the service to reach `RUNNING` state
+5. Run a post-deploy smoke test against `/health` and `/predict`
+6. Print the stable public URL
+
+### Monitoring
+
+App Runner emits metrics to **CloudWatch** automatically (no extra setup). Key metrics:
+
+| Metric | What to watch for |
+|---|---|
+| `ActiveInstances` | Should be ≥1 after first request; 0 = paused (normal when idle) |
+| `RequestLatency` | Spikes may indicate model loading on cold start |
+| `5xxError` | Elevated rate signals application errors |
+| `HttpStatusCode4xx` | High rate may indicate client-side schema issues |
+
+Free CloudWatch allowance (always free): 10 custom metrics + 10 alarms.
+
+To set up a simple cost alarm (recommended):
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name "AppRunnerMonthlyCostGuard" \
+  --namespace "AWS/Billing" \
+  --metric-name EstimatedCharges \
+  --dimensions Name=ServiceName,Value=AWSAppRunner \
+  --statistic Maximum \
+  --period 86400 \
+  --threshold 10 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --alarm-actions arn:aws:sns:<region>:<account>:your-topic
+```
+
+### Rollback
+
+App Runner does not keep previous image versions active, but ECR images are tagged by git SHA. To roll back:
+
+1. Find the previous working image tag from the ECR console or:
+   ```bash
+   aws ecr describe-images --repository-name student-performance \
+     --query 'sort_by(imageDetails,&imagePushedAt)[-5:].imageTags' --output table
+   ```
+2. Update the App Runner service to that image:
+   ```bash
+   SERVICE_ARN=$(aws apprunner list-services \
+     --query "ServiceSummaryList[?ServiceName=='student-performance-api'].ServiceArn" \
+     --output text)
+
+   aws apprunner update-service \
+     --service-arn "${SERVICE_ARN}" \
+     --source-configuration "{
+       \"ImageRepository\": {
+         \"ImageIdentifier\": \"<ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/student-performance:<PREV_SHA>\",
+         \"ImageConfiguration\": {\"Port\": \"8080\"},
+         \"ImageRepositoryType\": \"ECR\"
+       },
+       \"AuthenticationConfiguration\": {
+         \"AccessRoleArn\": \"arn:aws:iam::<ACCOUNT>:role/AppRunnerECRAccessRole\"
+       },
+       \"AutoDeploymentsEnabled\": false
+     }"
+   ```
+3. Wait for the service to return to `RUNNING` state, then verify `/health`.
+
+### Workflow file reference
+
+| Workflow | Purpose | Free tier? |
+|---|---|---|
+| `deploy-apprunner.yml` | **Recommended demo** — App Runner, no ALB, auto-pause | ✅ ~$0–5/month |
+| `deploy-aws.yml` | ECS Fargate + ALB (full staging/production) | ❌ ~$23–31/month |
+| `cd-aws.yml` | ECS Fargate production CD (triggered by `aws-v*` tag) | ❌ Paid |
+| `retrain-aws.yml` | Scheduled retrain + artifact promotion on AWS | depends on compute |
+
+---
+
 ## 9) Limitations, ethics, and future work
 
 - Uses demographic/proxy features; subgroup fairness risks must be assessed before operational use.
@@ -241,6 +418,7 @@ python -m pytest -q
 | Staging candidate train/deploy flow | [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml) |
 | Retrain, gate, promote pointer | [`.github/workflows/retrain.yml`](./.github/workflows/retrain.yml) |
 | Production deploy from promoted pointer | [`.github/workflows/cd-cloudrun.yml`](./.github/workflows/cd-cloudrun.yml) |
+| AWS Free Tier demo deployment (App Runner) | [`.github/workflows/deploy-apprunner.yml`](./.github/workflows/deploy-apprunner.yml) |
 | EDA interpretation support | [`notebooks/EDA_student_performance.ipynb`](./notebooks/EDA_student_performance.ipynb) |
 | Model training analysis support | [`notebooks/model_training.ipynb`](./notebooks/model_training.ipynb) |
 

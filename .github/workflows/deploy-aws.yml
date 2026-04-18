@@ -1,5 +1,19 @@
 name: Deploy to ECS Fargate (staging) - AWS
 
+# -----------------------------------------------------------------------
+# COST NOTE — NOT AWS FREE TIER
+# -----------------------------------------------------------------------
+# This workflow uses ECS Fargate + Application Load Balancer (ALB), which
+# are NOT covered by the AWS Free Tier:
+#   - ALB:         ~$16/month minimum (0.008 $/hour × 720 h + LCU charges)
+#   - ECS Fargate: ~$7-15/month (0.25 vCPU + 0.5 GB continuous)
+#   - ECR:         500 MB/month free (first 12 months)
+#
+# For a low-cost stakeholder demo, use deploy-apprunner.yml instead.
+# App Runner eliminates the ALB cost and scales to near-zero when idle.
+# See the "AWS Free Tier deployment guide" section in README.md.
+# -----------------------------------------------------------------------
+
 on:
   push:
     branches:
