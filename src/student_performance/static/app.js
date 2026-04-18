@@ -116,24 +116,28 @@ async function main() {
         return;
       }
 
-      // Score is 0–100
+      // Score is 0–100; UI is risk-first with score as supporting detail
       const score = Math.round(body.score_prediction * 10) / 10;
       const pct = Math.min(Math.max(score, 0), 100);
+      const normalizedRiskTier = String(body.risk_tier || "n/a").toLowerCase();
+      const riskTierLabel = normalizedRiskTier.toUpperCase();
+      const riskClass = ["low", "medium", "high"].includes(normalizedRiskTier)
+        ? `risk-${normalizedRiskTier}`
+        : "risk-na";
+      const riskProbabilityLabel =
+        body.risk_probability != null
+          ? `${Math.round(Number(body.risk_probability) * 100)}%`
+          : "n/a";
 
       resultDiv.innerHTML = `
-        <div class="result-score">
-          <div class="score-label">Predicted Math Score</div>
-          <div class="score-value">${score}</div>
-          <div class="score-unit">out of 100</div>
+        <div class="result-risk">
+          <div class="risk-label">Risk Tier</div>
+          <div class="risk-value ${riskClass}">${riskTierLabel}</div>
+          <div class="risk-unit">Risk Probability: <strong>${riskProbabilityLabel}</strong></div>
         </div>
         <div class="score-meta">
-          Risk Tier: <strong>${(body.risk_tier || "n/a").toUpperCase()}</strong> ·
-          Risk Probability: <strong>${
-            body.risk_probability != null
-              ? `${Math.round(Number(body.risk_probability) * 100)}%`
-              : "n/a"
-          }</strong> ·
-          Band: <strong>${body.performance_band || "n/a"}</strong>
+          Predicted Score: <strong>${score}/100</strong> ·
+          Performance Band: <strong>${body.performance_band || "n/a"}</strong>
         </div>
         <div class="score-bar-wrap">
           <div class="score-bar" id="score-bar"></div>
