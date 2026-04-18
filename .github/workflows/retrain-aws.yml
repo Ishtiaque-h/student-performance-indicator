@@ -239,4 +239,5 @@ jobs:
           PY
 
       - name: Deployment complete
-        run: echo "Staging deployment complete — Deployed URL: ${BASE_URL}"
+        run: |
+          echo "Staging deployment complete — Deployed URL: ${BASE_URL}"
