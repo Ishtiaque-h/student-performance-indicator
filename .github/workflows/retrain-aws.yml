@@ -210,25 +210,40 @@ jobs:
             exit 0
           fi
 
+          # Retry loop: ECS tasks may need time to pass target-group health checks
+          # after the ECS waiter reports stability.  Try HTTP before HTTPS because
+          # the ALB is typically HTTP-only on port 80.  Use --connect-timeout to
+          # fail fast on unreachable ports instead of waiting the OS TCP timeout
+          # (~5 min per attempt).
+          MAX_RETRIES=12
+          SLEEP_SECONDS=15
           BASE_URL=""
-          for scheme in https http; do
-            candidate="${scheme}://${DEPLOYED_DNS}"
-            if curl -fsS "${candidate}/health" >/tmp/health.json; then
-              BASE_URL="${candidate}"
-              break
-            fi
+          for attempt in $(seq 1 "$MAX_RETRIES"); do
+            for scheme in http https; do
+              candidate="${scheme}://${DEPLOYED_DNS}"
+              if curl -fsS --connect-timeout 10 --max-time 30 \
+                   "${candidate}/health" >/tmp/health.json 2>/dev/null; then
+                BASE_URL="${candidate}"
+                break 2
+              fi
+            done
+            echo "Attempt ${attempt}/${MAX_RETRIES}: health check not ready; waiting ${SLEEP_SECONDS}s..."
+            sleep "${SLEEP_SECONDS}"
           done
 
           if [ -z "${BASE_URL}" ]; then
-            echo "ERROR: unable to reach deployed service via http/https for DNS ${DEPLOYED_DNS}"
+            echo "ERROR: /health unreachable at ${DEPLOYED_DNS} after ${MAX_RETRIES} attempts"
+            echo "Last health response (if any):"
+            cat /tmp/health.json 2>/dev/null || true
             exit 1
           fi
 
           echo "BASE_URL=${BASE_URL}" >> "$GITHUB_ENV"
-          echo "Using base URL: ${BASE_URL}"
-          echo "Deployed URL: ${BASE_URL}"
+          echo "Health check passed — using base URL: ${BASE_URL}"
+          cat /tmp/health.json
 
-          HTTP_CODE="$(curl -sS -o /tmp/predict.json -w "%{http_code}" \
+          HTTP_CODE="$(curl -sS --connect-timeout 10 --max-time 60 \
+            -o /tmp/predict.json -w "%{http_code}" \
             -X POST "${BASE_URL}/predict" \
             -H "Content-Type: application/json" \
             -d '{
@@ -240,7 +255,7 @@ jobs:
             }')"
 
           if [ "${HTTP_CODE}" -ne 200 ]; then
-            echo "ERROR: /predict did not return 200"
+            echo "ERROR: /predict returned HTTP ${HTTP_CODE} (expected 200)"
             cat /tmp/predict.json
             exit 1
           fi
@@ -249,8 +264,60 @@ jobs:
           import json
           with open("/tmp/predict.json") as f:
               obj = json.load(f)
-          assert "score_prediction" in obj, obj
+          assert "score_prediction" in obj, f"Missing 'score_prediction' key in response: {obj}"
+          print(f"Prediction OK: score_prediction={obj['score_prediction']}")
           PY
+
+      - name: ECS diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== ECS Service Events ==="
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].events[0:20].[createdAt,message]' \
+            --output table || true
+
+          echo "=== ECS Deployment Status ==="
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].deployments[*].[status,rolloutState,rolloutStateReason,desiredCount,runningCount,pendingCount,taskDefinition]' \
+            --output table || true
+
+          echo "=== Target Group Health ==="
+          TG_ARN="$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].loadBalancers[0].targetGroupArn' \
+            --output text 2>/dev/null || true)"
+          if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
+            aws elbv2 describe-target-health \
+              --target-group-arn "$TG_ARN" \
+              --output json || true
+          else
+            echo "No target group ARN found; skipping target health check."
+          fi
+
+          echo "=== Recent STOPPED Tasks ==="
+          TASKS="$(aws ecs list-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --service-name "$ECS_SERVICE" \
+            --desired-status STOPPED \
+            --max-items 5 \
+            --query 'taskArns' \
+            --output text 2>/dev/null || true)"
+          if [ -n "$TASKS" ] && [ "$TASKS" != "None" ]; then
+            read -ra TASK_ARRAY <<< "$TASKS"
+            aws ecs describe-tasks \
+              --cluster "$ECS_CLUSTER" \
+              --tasks "${TASK_ARRAY[@]}" \
+              --query 'tasks[*].{stoppedReason:stoppedReason,containers:containers[*].{name:name,exitCode:exitCode,reason:reason}}' \
+              --output json || true
+          else
+            echo "No recently stopped tasks found."
+          fi
 
       - name: Deployment complete
         run: |
