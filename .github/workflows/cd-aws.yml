@@ -108,7 +108,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"  # e.g. v0.2.0
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
           echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
-          docker build --no-cache -t "${IMAGE_URI}" .
+          docker build --build-arg INSTALL_EXTRAS=api,aws -t "${IMAGE_URI}" .
           docker push "${IMAGE_URI}"
 
       - name: Download current ECS task definition
