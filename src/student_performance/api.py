@@ -97,13 +97,23 @@ def _get_pipeline(request: Request) -> PredictPipeline:
 # ---- Monitoring helpers ----
 def _monitoring_enabled() -> bool:
     """Check if monitoring is enabled via environment variable (default: enabled)."""
-    return os.getenv("MONITORING_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+    return os.getenv("MONITORING_ENABLED", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
 
 def _hash_feature_values_enabled() -> bool:
     """Check if hashing of feature values for monitoring is enabled via environment variable (default: enabled)."""
-    return os.getenv("MONITORING_HASH_FEATURE_VALUES", "1").strip().lower() not in {"0", "false", "no"}
+    return os.getenv("MONITORING_HASH_FEATURE_VALUES", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
 
-def _get_inference_logger( request: Request) -> InferenceLogger | None:
+
+def _get_inference_logger(request: Request) -> InferenceLogger | None:
     """Get or create an InferenceLogger instance, stored in app state for reuse across requests. Returns None if monitoring is disabled."""
     if not _monitoring_enabled():
         return None
@@ -112,9 +122,12 @@ def _get_inference_logger( request: Request) -> InferenceLogger | None:
         return logger_instance
     pipeline = _get_pipeline(request)
     path = pipeline.config.artifacts_dir / INFERENCE_LOG_FILENAME
-    logger_instance = InferenceLogger(log_path=path, hash_feature_values=_hash_feature_values_enabled())
+    logger_instance = InferenceLogger(
+        log_path=path, hash_feature_values=_hash_feature_values_enabled()
+    )
     request.app.state.inference_logger = logger_instance
     return logger_instance
+
 
 # ---- Validation helper ----
 def _validate_and_normalize(
@@ -329,7 +342,7 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
         status_code = 500
         logger.exception(f"Prediction failed with error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction failed")
-    
+
     finally:
         inference_logger = _get_inference_logger(request)
         if inference_logger is not None:
@@ -340,7 +353,9 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
                 endpoint="/predict",
                 status_code=status_code,
                 latency_ms=(time.perf_counter() - start) * 1000.0,
-                features=normalized_payload if normalized_payload is not None else payload,
+                features=(
+                    normalized_payload if normalized_payload is not None else payload
+                ),
                 prediction=score_prediction,
             )
 
@@ -351,7 +366,9 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
     Batch prediction with dynamic validation.
     """
     request_id = getattr(request.state, "request_id", "unknown")
-    logger.info(f"Received batch prediction request with ID: {request_id} and batch size: {len(payload)}")
+    logger.info(
+        f"Received batch prediction request with ID: {request_id} and batch size: {len(payload)}"
+    )
     start = time.perf_counter()
     status_code = 200
     normalized_items: List[Dict[str, Any]] = []
@@ -401,14 +418,16 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
         status_code = 500
         logger.exception(f"Prediction failed with error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction failed")
-    
+
     finally:
         inference_logger = _get_inference_logger(request)
         if inference_logger is not None:
             model_version = pipeline.get_model_version() if pipeline else "unknown"
             latency_ms = (time.perf_counter() - start) * 1000.0
             if len(normalized_items) > 0 and len(normalized_items) == len(assessments):
-                for idx, (item, assessment) in enumerate(zip(normalized_items, assessments)):
+                for idx, (item, assessment) in enumerate(
+                    zip(normalized_items, assessments)
+                ):
                     inference_logger.log_event(
                         request_id=f"{request_id}:{idx}",
                         model_version=model_version,

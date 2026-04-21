@@ -21,6 +21,7 @@ from student_performance.mlops.monitoring import (
     save_training_baseline,
 )
 
+
 @dataclass
 class TrainPipelineConfig:
     artifacts_dir: Path = Path("artifacts")
@@ -38,10 +39,14 @@ class TrainPipeline:
         train_df = pd.read_parquet(train_path)
         feature_df = train_df.drop(columns=[CONFIG.dataset.target_col], errors="ignore")
         if CONFIG.dataset.drop_cols:
-            feature_df = feature_df.drop(columns=CONFIG.dataset.drop_cols, errors="ignore")
+            feature_df = feature_df.drop(
+                columns=CONFIG.dataset.drop_cols, errors="ignore"
+            )
         pipeline_path = self.config.artifacts_dir / CONFIG.artifacts.pipeline_name
         if not pipeline_path.exists():
-            logging.warning("Skipping monitoring baseline generation: pipeline.pkl missing.")
+            logging.warning(
+                "Skipping monitoring baseline generation: pipeline.pkl missing."
+            )
             return
         pipeline = load_object(str(pipeline_path))
         preds = pipeline.predict(feature_df)

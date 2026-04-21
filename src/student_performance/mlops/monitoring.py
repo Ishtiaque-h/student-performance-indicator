@@ -16,15 +16,18 @@ def utc_now_iso() -> str:
     """Get the current UTC time as an ISO 8601 formatted string."""
     return datetime.now(timezone.utc).isoformat()
 
+
 def hash_value(value: Any) -> str:
     """Hash a value using SHA-256 and return the hexadecimal digest."""
     return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
 
 def _safe_ratio(numerator: float, denominator: float) -> float:
     """Compute a safe ratio, returning 0.0 if the denominator is zero."""
     if denominator == 0:
         return 0.0
     return float(numerator / denominator)
+
 
 def _normalize_baseline_metric(value: Any) -> float | None:
     """Normalize a baseline metric value, ensuring it's a positive float or None if invalid."""
@@ -35,6 +38,7 @@ def _normalize_baseline_metric(value: Any) -> float | None:
         return None
     return max(numeric, 1e-8)
 
+
 def _to_distribution(values: Sequence[Any]) -> Dict[str, float]:
     """Convert a sequence of values into a normalized distribution dictionary."""
     if not values:
@@ -42,9 +46,10 @@ def _to_distribution(values: Sequence[Any]) -> Dict[str, float]:
     counts: Dict[str, int] = {}
     for value in values:
         key = str(value).strip().lower()
-        counts[key] = counts.get(key, 0) + 1 
+        counts[key] = counts.get(key, 0) + 1
     total = float(sum(counts.values()))
     return {key: count / total for key, count in counts.items()}
+
 
 def total_variation_distance(
     baseline_distribution: Dict[str, float], current_distribution: Dict[str, float]
@@ -62,11 +67,14 @@ def total_variation_distance(
         )
     return float(0.5 * tvd)
 
-def psi_score(baseline_values: Sequence[float], current_values: Sequence[float]) -> float:
+
+def psi_score(
+    baseline_values: Sequence[float], current_values: Sequence[float]
+) -> float:
     """
     Calculate the Population Stability Index (PSI) between two sets of values.
-    PSI is a metric that quantifies the difference between two probability distributions, 
-    often used to detect distribution drift in model monitoring. It ranges from 0 (identical distributions) 
+    PSI is a metric that quantifies the difference between two probability distributions,
+    often used to detect distribution drift in model monitoring. It ranges from 0 (identical distributions)
     to 1 (completely different distributions).
     Interpretation guidelines (commonly used but can vary by context):
     - PSI < 0.1: No significant drift
@@ -90,8 +98,9 @@ def psi_score(baseline_values: Sequence[float], current_values: Sequence[float])
     psi = np.sum((current_pct - baseline_pct) * np.log(current_pct / baseline_pct))
     return float(max(psi, 0.0))
 
+
 # ---------------------------------------------
-# Data classes for structured representation of alerts, 
+# Data classes for structured representation of alerts,
 # automation actions, and champion/challenger decisions
 # ---------------------------------------------
 
@@ -104,7 +113,7 @@ class Alert:
     current: float
     threshold: float
     message: str
-    action: str\
+    action: str
 
 
 @dataclass
@@ -120,7 +129,8 @@ class ChampionChallengerDecision:
     summary: str
     checks: Dict[str, bool]
     metrics: Dict[str, float]
-    
+
+
 class InferenceLogger:
     def __init__(self, log_path: Path, hash_feature_values: bool = True):
         self.log_path = log_path
@@ -135,7 +145,7 @@ class InferenceLogger:
             else:
                 sanitized[key] = value
         return sanitized
-    
+
     def log_event(
         self,
         *,
@@ -162,7 +172,8 @@ class InferenceLogger:
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, sort_keys=True) + "\n")
         return event
-    
+
+
 def load_jsonl(path: Path) -> List[Dict[str, Any]]:
     """Load a JSON Lines file and return a list of dictionaries."""
     if not path.exists():
@@ -174,6 +185,7 @@ def load_jsonl(path: Path) -> List[Dict[str, Any]]:
             if line:
                 rows.append(json.loads(line))
     return rows
+
 
 def build_training_baseline(
     *,
@@ -203,16 +215,19 @@ def build_training_baseline(
     }
     return baseline
 
+
 def save_training_baseline(path: Path, baseline: Dict[str, Any]) -> None:
     """Save the training baseline dictionary to a JSON file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(baseline, indent=2), encoding="utf-8")
+
 
 def load_training_baseline(path: Path) -> Dict[str, Any]:
     """Load the training baseline from a JSON file, returning an empty dictionary if the file does not exist."""
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
 
 def compute_online_drift(
     *,
@@ -221,7 +236,7 @@ def compute_online_drift(
     segment_columns: Sequence[str] | None = None,
 ) -> Dict[str, Any]:
     """
-    Compute drift metrics for live inference events compared to the training baseline, including 
+    Compute drift metrics for live inference events compared to the training baseline, including
     categorical feature drift, prediction distribution drift, and segment distribution drift.
     """
     segment_columns = segment_columns or CONFIG.monitoring.segment_columns
@@ -234,7 +249,9 @@ def compute_online_drift(
     categorical: Dict[str, float] = {}
     baseline_categorical = baseline.get("categorical_features", {})
     for feature_name, base_dist in baseline_categorical.items():
-        curr_dist = _to_distribution([row.get(feature_name, "unknown") for row in live_features])
+        curr_dist = _to_distribution(
+            [row.get(feature_name, "unknown") for row in live_features]
+        )
         categorical[feature_name] = total_variation_distance(base_dist, curr_dist)
     prediction_drift = psi_score(
         baseline.get("prediction_distribution_reference", []), live_predictions
@@ -256,7 +273,10 @@ def compute_online_drift(
         "sample_size": len(live_events),
     }
 
-def _regression_metrics(y_true: Sequence[float], y_pred: Sequence[float]) -> Dict[str, float]:
+
+def _regression_metrics(
+    y_true: Sequence[float], y_pred: Sequence[float]
+) -> Dict[str, float]:
     """Compute regression performance metrics (R², MAE, RMSE) given true and predicted values."""
     y_true_arr = np.asarray(list(y_true), dtype=float)
     y_pred_arr = np.asarray(list(y_pred), dtype=float)
@@ -271,13 +291,14 @@ def _regression_metrics(y_true: Sequence[float], y_pred: Sequence[float]) -> Dic
     r2 = 1.0 if ss_tot == 0 else float(1 - (ss_res / ss_tot))
     return {"r2": r2, "mae": mae, "rmse": rmse, "count": float(len(y_true_arr))}
 
+
 def join_inference_with_labels(
     *,
     inference_events: Sequence[Dict[str, Any]],
     label_rows: Sequence[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
-    Join inference events with their corresponding labels based on request_id, returning a list 
+    Join inference events with their corresponding labels based on request_id, returning a list
     of dictionaries containing request_id, timestamp, prediction, label, and features.
     """
     labels_by_request: Dict[str, Dict[str, Any]] = {}
@@ -303,6 +324,7 @@ def join_inference_with_labels(
             }
         )
     return joined
+
 
 def compute_performance_monitoring(
     *,
@@ -345,13 +367,15 @@ def compute_performance_monitoring(
         "label_joined_count": len(sorted_rows),
     }
 
+
 def compute_degradation(
     *,
     baseline_metrics: Dict[str, float],
     current_metrics: Dict[str, float],
 ) -> Dict[str, float]:
     """
-    Compute degradation metrics comparing current performance to baseline, including R² drop and percentage increases in MAE and RMSE."""
+    Compute degradation metrics comparing current performance to baseline, including R² drop and percentage increases in MAE and RMSE.
+    """
     baseline_r2 = float(baseline_metrics.get("r2", 0.0))
     baseline_mae = _normalize_baseline_metric(baseline_metrics.get("mae"))
     baseline_rmse = _normalize_baseline_metric(baseline_metrics.get("rmse"))
@@ -373,6 +397,7 @@ def compute_degradation(
         "mae_increase_ratio": mae_increase_ratio,
         "rmse_increase_ratio": rmse_increase_ratio,
     }
+
 
 def _build_alert(
     *,
@@ -397,6 +422,7 @@ def _build_alert(
         ),
         action=action,
     )
+
 
 def evaluate_alerts(
     *,
@@ -499,7 +525,10 @@ def evaluate_alerts(
                 action="Page on-call and start incident triage immediately.",
             )
         )
-    if latency_p95 > slo.max_prediction_latency_ms_p95 * thresholds.latency_critical_multiplier:
+    if (
+        latency_p95
+        > slo.max_prediction_latency_ms_p95 * thresholds.latency_critical_multiplier
+    ):
         alerts.append(
             _build_alert(
                 name="latency_p95",
@@ -512,7 +541,10 @@ def evaluate_alerts(
                 action="Scale service and rollback latest deployment if unresolved.",
             )
         )
-    elif latency_p95 > slo.max_prediction_latency_ms_p95 * thresholds.latency_warning_multiplier:
+    elif (
+        latency_p95
+        > slo.max_prediction_latency_ms_p95 * thresholds.latency_warning_multiplier
+    ):
         alerts.append(
             _build_alert(
                 name="latency_p95",
@@ -531,7 +563,8 @@ def evaluate_alerts(
                 name="error_rate",
                 metric="error_rate",
                 current=error_rate,
-                threshold=slo.max_error_rate * thresholds.error_rate_critical_multiplier,
+                threshold=slo.max_error_rate
+                * thresholds.error_rate_critical_multiplier,
                 severity="critical",
                 reason="error rate critically elevated",
                 action="Page on-call and activate rollback plan.",
@@ -666,6 +699,7 @@ def evaluate_alerts(
         )
     return alerts
 
+
 def derive_service_metrics(events: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     """Derive service-level metrics such as availability, error rate, and latency percentiles from raw inference events."""
     if not events:
@@ -683,6 +717,7 @@ def derive_service_metrics(events: Sequence[Dict[str, Any]]) -> Dict[str, float]
         "error_rate": error_rate,
         "latency_p95_ms": latency_p95,
     }
+
 
 def plan_automation_actions(
     *,
@@ -718,7 +753,10 @@ def plan_automation_actions(
     if canary_metrics:
         canary_r2 = float(canary_metrics.get("r2", 0.0))
         canary_error_rate = float(canary_metrics.get("error_rate", 0.0))
-        if canary_r2 < CONFIG.monitoring.slo.min_r2 or canary_error_rate > CONFIG.monitoring.slo.max_error_rate:
+        if (
+            canary_r2 < CONFIG.monitoring.slo.min_r2
+            or canary_error_rate > CONFIG.monitoring.slo.max_error_rate
+        ):
             actions.append(
                 AutomationAction(
                     action_type="rollback_deployment",
@@ -735,6 +773,7 @@ def plan_automation_actions(
                 )
             )
     return actions
+
 
 def champion_challenger_decision(
     *,
@@ -816,9 +855,11 @@ def champion_challenger_decision(
         },
     )
 
+
 def alerts_to_dicts(alerts: Iterable[Alert]) -> List[Dict[str, Any]]:
     """Convert a list of Alert dataclass instances to a list of dictionaries for easier serialization."""
     return [asdict(alert) for alert in alerts]
+
 
 def actions_to_dicts(actions: Iterable[AutomationAction]) -> List[Dict[str, Any]]:
     """Convert a list of AutomationAction dataclass instances to a list of dictionaries for easier serialization."""

@@ -36,6 +36,7 @@ def _env_flag(name: str, default: str = "0") -> bool:
     """Utility to interpret environment variables as boolean flags."""
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
 
+
 # PredictPipeline is focused on loading artifacts and making predictions.
 @dataclass
 class PredictPipelineConfig:
@@ -46,9 +47,10 @@ class PredictPipelineConfig:
     report_path: Path
     ingestion_meta_path: Path
 
+
 # PredictPipeline handles loading the trained model and preprocessor, ensuring artifacts are available, and making predictions with risk assessments.
 class PredictPipeline:
-    _lock = Lock()  # protects download + first load 
+    _lock = Lock()  # protects download + first load
     # In-memory cache for loaded artifacts to avoid redundant loading on subsequent predictions. This is especially important in a production environment where predict() may be called frequently.
 
     def __init__(self):
@@ -85,7 +87,7 @@ class PredictPipeline:
             return float(report.get("best_model", {}).get("test_mae", 8.0))
         except Exception:
             return 8.0
-        
+
     def get_model_version(self) -> str:
         """Best effort stable model version string for online logging/monitoring."""
         try:
@@ -261,10 +263,11 @@ class PredictPipeline:
     def _align_to_training_schema(
         self, df: pd.DataFrame, preprocessor: Any
     ) -> pd.DataFrame:
-        """Ensure the input DataFrame has the same columns as the training data expected by the preprocessor. 
-        This is done by reindexing the DataFrame to match the 'feature_names_in_' attribute of the preprocessor, 
-        which is set during training. If any required columns are missing, a ValueError is raised. 
-        Extra columns in the input that were not seen during training will be ignored."""
+        """Ensure the input DataFrame has the same columns as the training data expected by the preprocessor.
+        This is done by reindexing the DataFrame to match the 'feature_names_in_' attribute of the preprocessor,
+        which is set during training. If any required columns are missing, a ValueError is raised.
+        Extra columns in the input that were not seen during training will be ignored.
+        """
         required = getattr(preprocessor, "feature_names_in_", None)
         if required is None:
             return df
@@ -280,7 +283,8 @@ class PredictPipeline:
         self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]
     ) -> np.ndarray:
         """
-         Main prediction method. Accepts input in multiple formats, ensures artifacts are loaded, and returns raw predictions as a numpy array."""
+        Main prediction method. Accepts input in multiple formats, ensures artifacts are loaded, and returns raw predictions as a numpy array.
+        """
         logging.info("Prediction started")
         try:
             preprocessor, model = self._load_artifacts()

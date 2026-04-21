@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import Any, Dict
 from student_performance.mlops.monitoring import champion_challenger_decision
 
+
 def _load_json(path: Path) -> Dict[str, Any]:
     """Utility to load JSON file if it exists, otherwise return empty dict."""
     return json.loads(path.read_text(encoding="utf-8"))
+
 
 def main() -> None:
     """
@@ -41,7 +43,7 @@ def main() -> None:
     print(json.dumps(output, indent=2))
     if not decision.promote:
         raise SystemExit(1)
-    
-    
+
+
 if __name__ == "__main__":
     main()

@@ -23,11 +23,13 @@ from student_performance.mlops.monitoring import (
 
 from student_performance.pipeline.predict_pipeline import PredictPipeline
 
+
 def _load_json(path: Path) -> Dict[str, Any]:
     """Utility to load JSON file if it exists, otherwise return empty dict."""
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
 
 def _take_last(events: List[Dict[str, Any]], lookback: int) -> List[Dict[str, Any]]:
     """Utility to take the last N events from a list, where N is the lookback parameter."""
@@ -35,11 +37,14 @@ def _take_last(events: List[Dict[str, Any]], lookback: int) -> List[Dict[str, An
         return events
     return events[-lookback:]
 
+
 def main() -> None:
     """
     Main function to run online monitoring. This will be called by an external scheduler (e.g. cron, Airflow) on a regular cadence (e.g. hourly, daily).
     """
-    parser = argparse.ArgumentParser(description="Run online drift/performance monitoring.")
+    parser = argparse.ArgumentParser(
+        description="Run online drift/performance monitoring."
+    )
     parser.add_argument(
         "--artifacts-dir",
         default="",
@@ -83,7 +88,11 @@ def main() -> None:
     )
     baseline = load_training_baseline(baseline_path)
     events = _take_last(load_jsonl(inference_path), args.lookback)
-    labels = load_jsonl(Path(args.labels_jsonl).expanduser().resolve()) if args.labels_jsonl else []
+    labels = (
+        load_jsonl(Path(args.labels_jsonl).expanduser().resolve())
+        if args.labels_jsonl
+        else []
+    )
     joined = join_inference_with_labels(inference_events=events, label_rows=labels)
     drift_metrics = compute_online_drift(
         live_events=events,
@@ -117,7 +126,8 @@ def main() -> None:
     critical_count = len([a for a in alerts if a.severity == "critical"])
     current_critical_windows = prev_critical_windows + 1 if critical_count > 0 else 0
     has_post_deploy_regression = critical_count > 0 and (
-        degradation_metrics["r2_drop"] >= CONFIG.monitoring.alert_thresholds.r2_drop_critical
+        degradation_metrics["r2_drop"]
+        >= CONFIG.monitoring.alert_thresholds.r2_drop_critical
     )
     actions = plan_automation_actions(
         alerts=alerts,
@@ -126,7 +136,9 @@ def main() -> None:
         has_post_deploy_regression=has_post_deploy_regression,
     )
     history_update = {"critical_windows": current_critical_windows}
-    monitoring_history_path.write_text(json.dumps(history_update, indent=2), encoding="utf-8")
+    monitoring_history_path.write_text(
+        json.dumps(history_update, indent=2), encoding="utf-8"
+    )
     report = {
         "drift_metrics": drift_metrics,
         "service_metrics": service_metrics,
@@ -140,6 +152,7 @@ def main() -> None:
             json.dumps(report, indent=2), encoding="utf-8"
         )
     print(json.dumps(report, indent=2))
+
 
 if __name__ == "__main__":
     main()

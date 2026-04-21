@@ -10,6 +10,7 @@ from student_performance.mlops.monitoring import (
     plan_automation_actions,
 )
 
+
 def _event(
     request_id: str,
     *,
@@ -29,6 +30,7 @@ def _event(
         "status_code": status_code,
         "latency_ms": latency_ms,
     }
+
 
 def test_drift_and_alerting_detects_synthetic_failures():
     """Test that the monitoring functions can detect synthetic drift and performance issues."""
@@ -80,12 +82,15 @@ def test_drift_and_alerting_detects_synthetic_failures():
     assert "latency_p95" in critical_names
     assert "error_rate" in critical_names
 
+
 def test_automation_creates_retrain_and_rollback_on_sustained_regression():
     """Test that the automation planning function creates appropriate actions when there are sustained critical alerts and post-deploy regression."""
+
     class _Alert:
         def __init__(self, name: str, severity: str):
             self.name = name
             self.severity = severity
+
     actions = plan_automation_actions(
         alerts=[_Alert("r2_drop", "critical"), _Alert("mae_increase", "critical")],
         critical_window_streak=3,
@@ -96,6 +101,7 @@ def test_automation_creates_retrain_and_rollback_on_sustained_regression():
     action_types = [action.action_type for action in actions]
     assert "create_retrain_candidate" in action_types
     assert "rollback_deployment" in action_types
+
 
 def test_champion_challenger_gate_blocks_unfair_or_weaker_model():
     """Test that the champion-challenger decision function correctly identifies when a challenger model should not be promoted due to overall weaker performance or fairness regression."""
