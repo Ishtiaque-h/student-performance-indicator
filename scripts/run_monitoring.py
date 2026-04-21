@@ -121,7 +121,8 @@ def main() -> None:
     )
     actions = plan_automation_actions(
         alerts=alerts,
-        sustained_breach_windows=current_critical_windows,
+        critical_window_streak=current_critical_windows,
+        required_sustained_windows=CONFIG.monitoring.sustained_breach_windows_for_retrain,
         has_post_deploy_regression=has_post_deploy_regression,
     )
     history_update = {"critical_windows": current_critical_windows}
@@ -139,6 +140,6 @@ def main() -> None:
             json.dumps(report, indent=2), encoding="utf-8"
         )
     print(json.dumps(report, indent=2))
-    
+
 if __name__ == "__main__":
     main()

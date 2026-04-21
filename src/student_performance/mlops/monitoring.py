@@ -668,19 +668,24 @@ def derive_service_metrics(events: Sequence[Dict[str, Any]]) -> Dict[str, float]
 def plan_automation_actions(
     *,
     alerts: Sequence[Alert],
-    sustained_breach_windows: int,
+    critical_window_streak: int,
+    required_sustained_windows: int,
     has_post_deploy_regression: bool,
     canary_metrics: Dict[str, float] | None = None,
 ) -> List[AutomationAction]:
     """Derive a list of automation actions based on the current alerts, whether breaches are sustained, and canary validation results."""
     actions: List[AutomationAction] = []
     critical_alerts = [alert for alert in alerts if alert.severity == "critical"]
-    if len(critical_alerts) >= sustained_breach_windows:
+    if critical_window_streak >= required_sustained_windows and critical_alerts:
         actions.append(
             AutomationAction(
                 action_type="create_retrain_candidate",
                 reason="Sustained critical drift/performance breaches detected.",
-                details={"critical_alert_names": [alert.name for alert in critical_alerts]},
+                details={
+                    "critical_alert_names": [alert.name for alert in critical_alerts],
+                    "critical_window_streak": critical_window_streak,
+                    "required_sustained_windows": required_sustained_windows,
+                },
             )
         )
     if has_post_deploy_regression:
