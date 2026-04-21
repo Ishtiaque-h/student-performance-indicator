@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List
@@ -16,6 +17,7 @@ from student_performance import __version__
 from student_performance.components.config import CONFIG
 from student_performance.exception import CustomException
 from student_performance.logger import get_logger
+from student_performance.mlops.monitoring import INFERENCE_LOG_FILENAME, InferenceLogger
 from student_performance.pipeline.predict_pipeline import PredictPipeline
 
 APP_TITLE = "Student Performance Predictor"
@@ -90,6 +92,41 @@ def _get_pipeline(request: Request) -> PredictPipeline:
         pipeline._load_artifacts()
         request.app.state.pipeline = pipeline
     return pipeline
+
+
+# ---- Monitoring helpers ----
+def _monitoring_enabled() -> bool:
+    """Check if monitoring is enabled via environment variable (default: enabled)."""
+    return os.getenv("MONITORING_ENABLED", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+
+def _hash_feature_values_enabled() -> bool:
+    """Check if hashing of feature values for monitoring is enabled via environment variable (default: enabled)."""
+    return os.getenv("MONITORING_HASH_FEATURE_VALUES", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+
+def _get_inference_logger(request: Request) -> InferenceLogger | None:
+    """Get or create an InferenceLogger instance, stored in app state for reuse across requests. Returns None if monitoring is disabled."""
+    if not _monitoring_enabled():
+        return None
+    logger_instance = getattr(request.app.state, "inference_logger", None)
+    if logger_instance is not None:
+        return logger_instance
+    pipeline = _get_pipeline(request)
+    path = pipeline.config.artifacts_dir / INFERENCE_LOG_FILENAME
+    logger_instance = InferenceLogger(
+        log_path=path, hash_feature_values=_hash_feature_values_enabled()
+    )
+    request.app.state.inference_logger = logger_instance
+    return logger_instance
 
 
 # ---- Validation helper ----
@@ -267,6 +304,10 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
     """
     request_id = getattr(request.state, "request_id", "unknown")
     logger.info(f"Received prediction request with ID: {request_id}")
+    start = time.perf_counter()
+    status_code = 200
+    normalized_payload: Dict[str, Any] | None = None
+    score_prediction: float | None = None
 
     try:
         pipeline = _get_pipeline(request)
@@ -288,16 +329,35 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
         }
 
     except ValueError as e:
+        status_code = 422
         logger.error(f"Validation error: {e}", exc_info=True)
         raise HTTPException(status_code=422, detail=str(e))
 
     except CustomException:
+        status_code = 500
         logger.exception("Prediction failed")
         raise HTTPException(status_code=500, detail="Prediction failed")
 
     except Exception as e:
+        status_code = 500
         logger.exception(f"Prediction failed with error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction failed")
+
+    finally:
+        inference_logger = _get_inference_logger(request)
+        if inference_logger is not None:
+            model_version = pipeline.get_model_version() if pipeline else "unknown"
+            inference_logger.log_event(
+                request_id=request_id,
+                model_version=model_version,
+                endpoint="/predict",
+                status_code=status_code,
+                latency_ms=(time.perf_counter() - start) * 1000.0,
+                features=(
+                    normalized_payload if normalized_payload is not None else payload
+                ),
+                prediction=score_prediction,
+            )
 
 
 @app.post("/predict_batch")
@@ -305,6 +365,16 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
     """
     Batch prediction with dynamic validation.
     """
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.info(
+        f"Received batch prediction request with ID: {request_id} and batch size: {len(payload)}"
+    )
+    start = time.perf_counter()
+    status_code = 200
+    normalized_items: List[Dict[str, Any]] = []
+    assessments: List[Dict[str, Any]] = []
+    pipeline: PredictPipeline | None = None
+
     try:
         pipeline = _get_pipeline(request)
         preprocessor, _ = pipeline._load_artifacts()
@@ -335,13 +405,45 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
         return {"predictions": enriched_predictions}
 
     except ValueError as e:
+        status_code = 422
         logger.error(f"Validation error: {e}", exc_info=True)
         raise HTTPException(status_code=422, detail=str(e))
 
     except CustomException:
+        status_code = 500
         logger.exception("Prediction failed")
         raise HTTPException(status_code=500, detail="Prediction failed")
 
     except Exception as e:
+        status_code = 500
         logger.exception(f"Prediction failed with error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail="Prediction failed")
+
+    finally:
+        inference_logger = _get_inference_logger(request)
+        if inference_logger is not None:
+            model_version = pipeline.get_model_version() if pipeline else "unknown"
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            if len(normalized_items) > 0 and len(normalized_items) == len(assessments):
+                for idx, (item, assessment) in enumerate(
+                    zip(normalized_items, assessments)
+                ):
+                    inference_logger.log_event(
+                        request_id=f"{request_id}:{idx}",
+                        model_version=model_version,
+                        endpoint="/predict_batch",
+                        status_code=status_code,
+                        latency_ms=latency_ms,
+                        features=item,
+                        prediction=float(assessment["score_prediction"]),
+                    )
+            else:
+                inference_logger.log_event(
+                    request_id=request_id,
+                    model_version=model_version,
+                    endpoint="/predict_batch",
+                    status_code=status_code,
+                    latency_ms=latency_ms,
+                    features={"batch_size": len(payload)},
+                    prediction=None,
+                )

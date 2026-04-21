@@ -175,18 +175,147 @@ class ProductConfig:
 
 
 # ----------------------------
+# Monitoring SLO/SLA config
+# ----------------------------
+
+
+@dataclass
+class MonitoringSLOConfig:
+    """
+    SLOs and guardrails for monitoring the model in production.
+     - Service SLOs ensure the prediction service is performant and reliable.
+     - Model freshness SLO ensures the model is retrained before it becomes stale.
+     - Online quality guardrails set expected performance thresholds on recent predictions to catch data drift or other issues.
+     Adjust these values based on your specific requirements and risk tolerance.
+        Note: these are just example values for demonstration purposes.  In a real deployment, you would set these based on your specific requirements and risk tolerance.
+    """
+
+    # Service SLOs
+    max_prediction_latency_ms_p95: float = (
+        250.0  # 95th percentile latency in milliseconds
+    )
+    min_api_availability: float = 0.995  # Minimum acceptable availability (e.g. 99.5%)
+    max_error_rate: float = (
+        0.02  # Maximum acceptable error rate (e.g. 2% of requests resulting in errors)
+    )
+
+    # Model freshness SLOs
+    max_model_age_hours: float = (
+        24.0 * 30
+    )  # (e.g. retrain if model is older than 30 days)
+
+    # Online quality guardrails (e.g. monitored on a rolling window of recent predictions)
+    min_r2: float = 0.05
+    max_mae: float = 15.0
+    max_rmse: float = 20.0
+
+
+# ----------------------------
+# Monitoring alerting config
+# ----------------------------
+
+
+@dataclass
+class MonitoringAlertThresholdConfig:
+    """
+    Thresholds for triggering alerts when SLOs or guardrails are violated.
+    Adjust these values based on your specific requirements and risk tolerance.
+        Note: these are just example values for demonstration purposes.  In a real deployment, you would set these based on your specific requirements and risk tolerance.
+    """
+
+    # Drift thresholds
+    categorical_drift_warning: float = (
+        0.15  # e.g. 15% of predictions in a category have changed distribution compared to training data
+    )
+    categorical_drift_critical: float = 0.25
+    prediction_drift_warning: float = (
+        0.10  # e.g. overall distribution of predictions has changed by 10% compared to training data
+    )
+    prediction_drift_critical: float = 0.20
+    segment_drift_warning: float = (
+        0.15  # e.g. performance on a specific segment (e.g. demographic group) has degraded by 15% compared to training data
+    )
+    segment_drift_critical: float = 0.25
+
+    # Performance degradation thresholds ( relative to baseline)
+    r2_drop_warning: float = (
+        0.10  # e.g. R2 has dropped by 10% compared to baseline performance on training data
+    )
+    r2_drop_critical: float = 0.20
+    mae_increase_warning: float = (
+        0.10  # e.g. MAE has increased by 10% compared to baseline performance on training data
+    )
+    mae_increase_critical: float = 0.20
+    rmse_increase_warning: float = (
+        0.10  # e.g. RMSE has increased by 10% compared to baseline performance on training data
+    )
+    rmse_increase_critical: float = 0.20
+
+    # Service degradation thresholds
+    latency_warning_multiplier: float = (
+        1.0  # e.g. 100% increase in latency compared to baseline latency during training
+    )
+    latency_critical_multiplier: float = 1.4
+    error_rate_warning_multiplier: float = (
+        1.0  # e.g. 100% increase in error rate compared to baseline error rate during training
+    )
+    error_rate_critical_multiplier: float = 2.0
+
+
+# ----------------------------
+# Combined monitoring config
+# ----------------------------
+@dataclass
+class MonitoringConfig:
+    """
+    Overall monitoring configuration, combining SLOs and alert thresholds, as well as controls for how monitoring is implemented.
+    """
+
+    enabled: bool = True
+    # Default online monitoring segments for this project
+    segment_columns: Tuple[str, ...] = ("gender", "lunch", "race_ethnicity")
+    # Rolling windows for delayed-label quality evaluation
+    rolling_windows: Tuple[int, ...] = (50, 200)
+    # Automation controls for retraining and alerting
+    sustained_breach_windows_for_retrain: int = (
+        3  # Number of consecutive windows breaching thresholds to trigger retraining
+    )
+    min_canary_sample_size: int = (
+        50  # Minimum number of predictions in a canary test to consider the results statistically meaningful
+    )
+    # Governance controls for monitoring access and alerting
+    fairness_segment_max_mae_gap: float = (
+        3.0  # Maximum acceptable gap in MAE between any two demographic segments before triggering a fairness alert
+    )
+    promote_requires_segment_improvement: bool = (
+        True  # Whether to require improvement in all segments before promoting a new model, or allow promotion if overall metrics improve even if some segments degrade
+    )
+
+    slo: MonitoringSLOConfig = field(default_factory=MonitoringSLOConfig)
+    alert_thresholds: MonitoringAlertThresholdConfig = field(
+        default_factory=MonitoringAlertThresholdConfig
+    )
+
+
+# ----------------------------
 # Full pipeline config bundle
 # ----------------------------
 
 
 @dataclass
 class PipelineConfig:
+    """
+    Centralized configuration for the entire pipeline, combining all sub-configs.
+    This makes it easy to pass around a single config object to all components, while still keeping related settings organized in logical groups.
+    """
+
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     split: SplitConfig = field(default_factory=SplitConfig)
     artifacts: ArtifactsConfig = field(default_factory=ArtifactsConfig)
     tuning: TuningConfig = field(default_factory=TuningConfig)
     dense_safety: DenseSafetyConfig = field(default_factory=DenseSafetyConfig)
     product: ProductConfig = field(default_factory=ProductConfig)
+    monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
 
 # Single shared instance (optional, but convenient)

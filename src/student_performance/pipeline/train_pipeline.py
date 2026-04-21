@@ -3,16 +3,23 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple
+import pandas as pd
 
 from student_performance.exception import CustomException
 from student_performance.logger import logging
-from student_performance.utils import find_project_root
+from student_performance.utils import find_project_root, load_object
 
 from student_performance.components.config import CONFIG
 from student_performance.components.data_ingestion import DataIngestion
 from student_performance.components.data_transformation import DataTransformation
 from student_performance.components.model_trainer import ModelTrainer
 from student_performance.mlops.mlflow_logger import log_training_run
+
+from student_performance.mlops.monitoring import (
+    DRIFT_BASELINE_FILENAME,
+    build_training_baseline,
+    save_training_baseline,
+)
 
 
 @dataclass
@@ -23,6 +30,34 @@ class TrainPipelineConfig:
 class TrainPipeline:
     def __init__(self):
         self.config = TrainPipelineConfig()
+
+    def _write_monitoring_baseline(self, train_path: Path) -> None:
+        """
+        After training, generate and save a monitoring baseline based on the training data and model predictions.
+        This baseline will be used for future drift detection and performance monitoring in production.
+        """
+        train_df = pd.read_parquet(train_path)
+        feature_df = train_df.drop(columns=[CONFIG.dataset.target_col], errors="ignore")
+        if CONFIG.dataset.drop_cols:
+            feature_df = feature_df.drop(
+                columns=CONFIG.dataset.drop_cols, errors="ignore"
+            )
+        pipeline_path = self.config.artifacts_dir / CONFIG.artifacts.pipeline_name
+        if not pipeline_path.exists():
+            logging.warning(
+                "Skipping monitoring baseline generation: pipeline.pkl missing."
+            )
+            return
+        pipeline = load_object(str(pipeline_path))
+        preds = pipeline.predict(feature_df)
+        baseline = build_training_baseline(
+            train_rows=feature_df.to_dict(orient="records"),
+            train_predictions=[float(v) for v in preds],
+            segment_columns=CONFIG.monitoring.segment_columns,
+        )
+        baseline_path = self.config.artifacts_dir / DRIFT_BASELINE_FILENAME
+        save_training_baseline(baseline_path, baseline)
+        logging.info(f"Monitoring baseline written: {baseline_path}")
 
     def run(self) -> Tuple[str, Dict[str, Any]]:
         """
@@ -67,6 +102,7 @@ class TrainPipeline:
             best_model_name, report = trainer.initiate_model_trainer(
                 X_train, y_train, X_test, y_test
             )
+            self._write_monitoring_baseline(train_path)
 
             log_training_run(
                 best_model_name=best_model_name,

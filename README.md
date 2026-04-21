@@ -6,9 +6,11 @@
 [![Retrain](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/retrain.yml/badge.svg)](https://github.com/Ishtiaque-h/student-performance-indicator/actions/workflows/retrain.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-An end-to-end ML system that classifies student `who needs support` from enrollment-time attributes, with reproducible training, staged deployment, and artifact promotion. **Monitoring is being added as part of the next phase of development.**
+An end-to-end ML system that classifies student `who needs support` from enrollment-time attributes, with reproducible training, staged deployment (**GCP** and **AWS**), artifact promotion, and online monitoring/ response automation.
 
-🔗 **Live API**: https://student-performance-api-654581958038.us-central1.run.app
+🔗 **Production Live API**: 
+> *`GCP`*: https://student-performance-api-654581958038.us-central1.run.app  
+> *`AWS`*: http://lb-student-performance-api-1850875521.us-east-2.elb.amazonaws.com
 
 ---
 
@@ -123,7 +125,7 @@ Reliability implications:
 
 ---
 
-## 7) API validation and reliability
+## 6) API validation and reliability
 
 Core endpoints:
 - `GET /health`
@@ -147,7 +149,7 @@ Assessment logic for `score_range`, `performance_band`, `risk_probability`, and 
 
 ---
 
-## 8) MLOps lifecycle (CI/CD/retrain/promotion)
+## 7) MLOps lifecycle (CI/CD/retrain/promotion)
 
 Shared ML contract across cloud targets: train candidate → evaluate/gate → publish/promote artifact pointer → deploy serving app with promoted artifact URI (`gs://...` or `s3://...`).
 
@@ -169,12 +171,37 @@ AWS deployment variant is maintained in branch `aws-deployment`, while this bran
 
 ---
 
+## 8) Online monitoring, alerts, and governance
+This repository now includes practical monitoring components for production use:
+- Production SLO/SLA config for latency, availability, error rate, model freshness, and minimum quality guardrails (`CONFIG.monitoring`).
+- Structured online inference logging with request ID, model version, feature payload (privacy-safe hashing by default), prediction, timestamp, endpoint status, and latency.
+- Online drift checks:
+  - categorical drift per feature,
+  - prediction distribution drift (PSI),
+  - segment drift for `gender`, `lunch`, and `race_ethnicity`.
+- Delayed-label performance monitoring:
+  - request/label join,
+  - rolling global and segment-level R²/MAE/RMSE,
+  - degradation trend against baseline.
+- Warning/critical alert rules with action-oriented text and automation hooks:
+  - retrain candidate creation on sustained critical breaches,
+  - canary promotion/rollback decision support.
+- Champion/challenger promotion gate requiring metric and segment/fairness checks before promotion.
+Monitoring entry points:
+- `scripts/run_monitoring.py`
+- `scripts/champion_challenger_gate.py`
+Operational docs:
+- Dashboard: [`docs/dashboard_service_model_health.md`](./docs/dashboard_service_model_health.md)
+- Runbook: [`docs/runbook_monitoring_incident.md`](./docs/runbook_monitoring_incident.md)
+
+---
+
 ## 9) Limitations, ethics, and future work
 
 - Uses demographic/proxy features; subgroup fairness risks must be assessed before operational use.
 - Not for high-stakes automated decisions (discipline, admissions, punitive actions).
 - Predictive outputs should support human-in-the-loop triage, not replace educators.
-- **Next phase of ongoing development:** subgroup fairness analysis, drift monitoring, post-deploy performance tracking/calibration.
+- Continue improving label-latency handling and data contracts for larger-scale production traffic.
 
 ---
 
@@ -241,6 +268,10 @@ python -m pytest -q
 | Staging candidate train/deploy flow | [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml) |
 | Retrain, gate, promote pointer | [`.github/workflows/retrain.yml`](./.github/workflows/retrain.yml) |
 | Production deploy from promoted pointer | [`.github/workflows/cd-cloudrun.yml`](./.github/workflows/cd-cloudrun.yml) |
+| Online monitoring + alert logic | [`src/student_performance/mlops/monitoring.py`](./src/student_performance/mlops/monitoring.py), [`scripts/run_monitoring.py`](./scripts/run_monitoring.py) |
+| Champion/challenger promotion gate | [`scripts/champion_challenger_gate.py`](./scripts/champion_challenger_gate.py), [`src/student_performance/mlops/monitoring.py`](./src/student_performance/mlops/monitoring.py) |
+| Monitoring reliability tests | [`tests/test_monitoring_reliability.py`](./tests/test_monitoring_reliability.py), [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) |
+| Dashboard + runbook | [`docs/dashboard_service_model_health.md`](./docs/dashboard_service_model_health.md), [`docs/runbook_monitoring_incident.md`](./docs/runbook_monitoring_incident.md) |
 | EDA interpretation support | [`notebooks/EDA_student_performance.ipynb`](./notebooks/EDA_student_performance.ipynb) |
 | Model training analysis support | [`notebooks/model_training.ipynb`](./notebooks/model_training.ipynb) |
 

@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Union, Tuple
@@ -32,9 +33,11 @@ def _download_artifacts(uri: str, local_dir: Path, filenames: list) -> None:
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
+    """Utility to interpret environment variables as boolean flags."""
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+# PredictPipeline is focused on loading artifacts and making predictions.
 @dataclass
 class PredictPipelineConfig:
     artifacts_dir: Path
@@ -45,8 +48,10 @@ class PredictPipelineConfig:
     ingestion_meta_path: Path
 
 
+# PredictPipeline handles loading the trained model and preprocessor, ensuring artifacts are available, and making predictions with risk assessments.
 class PredictPipeline:
     _lock = Lock()  # protects download + first load
+    # In-memory cache for loaded artifacts to avoid redundant loading on subsequent predictions. This is especially important in a production environment where predict() may be called frequently.
 
     def __init__(self):
         root = find_project_root()
@@ -74,6 +79,7 @@ class PredictPipeline:
         self._pipeline: Any = None
 
     def _read_test_mae(self) -> float:
+        """Read the test MAE from the model report to use as a basis for risk assessments and score ranges."""
         if not self.config.report_path.exists():
             return 8.0
         try:
@@ -82,7 +88,28 @@ class PredictPipeline:
         except Exception:
             return 8.0
 
+    def get_model_version(self) -> str:
+        """Best effort stable model version string for online logging/monitoring."""
+        try:
+            report = {}
+            if self.config.report_path.exists():
+                report = json.loads(self.config.report_path.read_text())
+            best = report.get("best_model", {})
+            model_name = str(best.get("name", "unknown"))
+            trained_at = str(best.get("timestamp", "unknown"))
+            uri = (
+                os.getenv("GCS_ARTIFACTS_URI", "").strip()
+                or os.getenv("S3_ARTIFACTS_URI", "").strip()
+                or os.getenv("MODEL_REGISTRY_URI", "").strip()
+                or str(self.config.artifacts_dir)
+            )
+            uri_sig = hashlib.sha256(uri.encode("utf-8")).hexdigest()[:8]
+            return f"{model_name}:{trained_at}:{uri_sig}"
+        except Exception:
+            return "unknown"
+
     def _risk_probability(self, score_prediction: float) -> float:
+        """Convert a score prediction into a risk probability using a logistic function centered around a configurable threshold and scale."""
         threshold = float(CONFIG.product.risk_threshold_score)
         scale = max(float(CONFIG.product.risk_probability_scale), 1e-6)
         # Higher probability when predicted score is below threshold.
@@ -90,6 +117,7 @@ class PredictPipeline:
         return float(1.0 / (1.0 + np.exp(-z)))
 
     def _risk_tier(self, risk_probability: float) -> str:
+        """Categorize risk probability into discrete tiers based on configurable thresholds."""
         if risk_probability >= float(CONFIG.product.risk_tier_high_min):
             return "high"
         if risk_probability >= float(CONFIG.product.risk_tier_medium_min):
@@ -97,6 +125,7 @@ class PredictPipeline:
         return "low"
 
     def _performance_band(self, score_prediction: float) -> str:
+        """Categorize score prediction into performance bands based on configurable thresholds."""
         if score_prediction < float(CONFIG.product.performance_band_low_max):
             return "low"
         if score_prediction < float(CONFIG.product.performance_band_medium_max):
@@ -104,12 +133,14 @@ class PredictPipeline:
         return "high"
 
     def _score_range(self, score_prediction: float) -> Tuple[float, float]:
+        """Calculate a score range around the prediction using the test MAE as a basis for the half-width, ensuring it stays within 0-100."""
         half_width = max(self._read_test_mae(), 1.0)
         low = max(0.0, float(score_prediction) - half_width)
         high = min(100.0, float(score_prediction) + half_width)
         return (low, high)
 
     def _ensure_artifacts(self) -> None:
+        """Ensure that required artifacts are present locally, downloading from remote storage if necessary. Respects a FORCE_MODEL_DOWNLOAD flag for re-downloading."""
         force = _env_flag("FORCE_MODEL_DOWNLOAD", "0")
 
         core_required = [
@@ -214,6 +245,13 @@ class PredictPipeline:
     def _to_dataframe(
         self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]
     ) -> pd.DataFrame:
+        """
+        Convert input data into a pandas DataFrame. Supports three formats:
+        1) A pandas DataFrame (returns a copy)
+        2) A single record as a dict (converted to a single-row DataFrame)
+        3) Multiple records as a list of dicts (converted to a DataFrame)
+        Raises a TypeError if the input format is not recognized.
+        """
         if isinstance(X, pd.DataFrame):
             return X.copy()
         if isinstance(X, dict):
@@ -225,6 +263,11 @@ class PredictPipeline:
     def _align_to_training_schema(
         self, df: pd.DataFrame, preprocessor: Any
     ) -> pd.DataFrame:
+        """Ensure the input DataFrame has the same columns as the training data expected by the preprocessor.
+        This is done by reindexing the DataFrame to match the 'feature_names_in_' attribute of the preprocessor,
+        which is set during training. If any required columns are missing, a ValueError is raised.
+        Extra columns in the input that were not seen during training will be ignored.
+        """
         required = getattr(preprocessor, "feature_names_in_", None)
         if required is None:
             return df
@@ -239,6 +282,9 @@ class PredictPipeline:
     def predict(
         self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]
     ) -> np.ndarray:
+        """
+        Main prediction method. Accepts input in multiple formats, ensures artifacts are loaded, and returns raw predictions as a numpy array.
+        """
         logging.info("Prediction started")
         try:
             preprocessor, model = self._load_artifacts()
@@ -281,6 +327,7 @@ class PredictPipeline:
     def predict_with_assessment(
         self, X: Union[pd.DataFrame, Dict[str, Any], List[Dict[str, Any]]]
     ) -> List[Dict[str, Any]]:
+        """Make predictions and enrich them with performance bands, risk probabilities, and risk tiers based on configurable thresholds."""
         preds = self.predict(X)
         output: List[Dict[str, Any]] = []
         for raw_pred in preds:

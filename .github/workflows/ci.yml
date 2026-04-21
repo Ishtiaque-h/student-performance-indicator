@@ -35,3 +35,6 @@ jobs:
 
       - name: Smoke tests
         run: pytest -m smoke -q
+
+      - name: Monitoring reliability tests
+        run: pytest tests/test_monitoring_reliability.py -q
