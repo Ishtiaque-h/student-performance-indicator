@@ -26,6 +26,15 @@ def _safe_ratio(numerator: float, denominator: float) -> float:
         return 0.0
     return float(numerator / denominator)
 
+def _normalize_baseline_metric(value: Any) -> float | None:
+    """Normalize a baseline metric value, ensuring it's a positive float or None if invalid."""
+    if value is None:
+        return None
+    numeric = float(value)
+    if numeric <= 0.0:
+        return None
+    return max(numeric, 1e-8)
+
 def _to_distribution(values: Sequence[Any]) -> Dict[str, float]:
     """Convert a sequence of values into a normalized distribution dictionary."""
     if not values:
@@ -344,15 +353,25 @@ def compute_degradation(
     """
     Compute degradation metrics comparing current performance to baseline, including R² drop and percentage increases in MAE and RMSE."""
     baseline_r2 = float(baseline_metrics.get("r2", 0.0))
-    baseline_mae = max(float(baseline_metrics.get("mae", 1.0)), 1e-8)
-    baseline_rmse = max(float(baseline_metrics.get("rmse", 1.0)), 1e-8)
+    baseline_mae = _normalize_baseline_metric(baseline_metrics.get("mae"))
+    baseline_rmse = _normalize_baseline_metric(baseline_metrics.get("rmse"))
     current_r2 = float(current_metrics.get("r2", 0.0))
     current_mae = float(current_metrics.get("mae", 0.0))
     current_rmse = float(current_metrics.get("rmse", 0.0))
+    mae_increase_ratio = (
+        max(0.0, (current_mae - baseline_mae) / baseline_mae)
+        if baseline_mae is not None
+        else 0.0
+    )
+    rmse_increase_ratio = (
+        max(0.0, (current_rmse - baseline_rmse) / baseline_rmse)
+        if baseline_rmse is not None
+        else 0.0
+    )
     return {
         "r2_drop": max(0.0, baseline_r2 - current_r2),
-        "mae_increase_ratio": max(0.0, (current_mae - baseline_mae) / baseline_mae),
-        "rmse_increase_ratio": max(0.0, (current_rmse - baseline_rmse) / baseline_rmse),
+        "mae_increase_ratio": mae_increase_ratio,
+        "rmse_increase_ratio": rmse_increase_ratio,
     }
 
 def _build_alert(
@@ -653,7 +672,7 @@ def derive_service_metrics(events: Sequence[Dict[str, Any]]) -> Dict[str, float]
         return {"availability": 1.0, "error_rate": 0.0, "latency_p95_ms": 0.0}
     statuses = [int(event.get("status_code", 500)) for event in events]
     latencies = [float(event.get("latency_ms", 0.0)) for event in events]
-    success_count = sum(1 for s in statuses if 200 <= s < 500)
+    success_count = sum(1 for s in statuses if 200 <= s < 400)
     total = len(statuses)
     server_errors = sum(1 for s in statuses if s >= 500)
     availability = _safe_ratio(success_count, total)
@@ -725,15 +744,33 @@ def champion_challenger_decision(
     challenger_segment_mae: Dict[str, float],
 ) -> ChampionChallengerDecision:
     """Evaluate champion vs challenger performance and fairness metrics to make a promotion decision."""
+    champion_r2 = champion_metrics.get("r2")
+    challenger_r2 = challenger_metrics.get("r2")
+    champion_mae = champion_metrics.get("mae")
+    challenger_mae = challenger_metrics.get("mae")
+    champion_rmse = champion_metrics.get("rmse")
+    challenger_rmse = challenger_metrics.get("rmse")
+    metrics_available = all(
+        value is not None
+        for value in [
+            champion_r2,
+            challenger_r2,
+            champion_mae,
+            challenger_mae,
+            champion_rmse,
+            challenger_rmse,
+        ]
+    )
     checks: Dict[str, bool] = {}
-    checks["r2_improved"] = float(challenger_metrics.get("r2", -1)) >= float(
-        champion_metrics.get("r2", -1)
+    checks["metrics_present"] = metrics_available
+    checks["r2_improved"] = metrics_available and float(challenger_r2) >= float(
+        champion_r2
     )
-    checks["mae_not_worse"] = float(challenger_metrics.get("mae", np.inf)) <= float(
-        champion_metrics.get("mae", np.inf)
+    checks["mae_not_worse"] = metrics_available and float(challenger_mae) <= float(
+        champion_mae
     )
-    checks["rmse_not_worse"] = float(challenger_metrics.get("rmse", np.inf)) <= float(
-        champion_metrics.get("rmse", np.inf)
+    checks["rmse_not_worse"] = metrics_available and float(challenger_rmse) <= float(
+        champion_rmse
     )
     max_champion_gap = (
         max(champion_segment_mae.values()) - min(champion_segment_mae.values())
@@ -768,12 +805,12 @@ def champion_challenger_decision(
         summary=summary,
         checks=checks,
         metrics={
-            "champion_r2": float(champion_metrics.get("r2", 0.0)),
-            "challenger_r2": float(challenger_metrics.get("r2", 0.0)),
-            "champion_mae": float(champion_metrics.get("mae", 0.0)),
-            "challenger_mae": float(challenger_metrics.get("mae", 0.0)),
-            "champion_rmse": float(champion_metrics.get("rmse", 0.0)),
-            "challenger_rmse": float(challenger_metrics.get("rmse", 0.0)),
+            "champion_r2": float(champion_r2 or 0.0),
+            "challenger_r2": float(challenger_r2 or 0.0),
+            "champion_mae": float(champion_mae or 0.0),
+            "challenger_mae": float(challenger_mae or 0.0),
+            "champion_rmse": float(champion_rmse or 0.0),
+            "challenger_rmse": float(challenger_rmse or 0.0),
             "champion_segment_mae_gap": float(max_champion_gap),
             "challenger_segment_mae_gap": float(max_challenger_gap),
         },
