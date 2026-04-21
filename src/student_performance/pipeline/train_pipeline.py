@@ -102,7 +102,7 @@ class TrainPipeline:
             best_model_name, report = trainer.initiate_model_trainer(
                 X_train, y_train, X_test, y_test
             )
-            self.write_monitoring_baseline(train_path)
+            self._write_monitoring_baseline(train_path)
 
             log_training_run(
                 best_model_name=best_model_name,
