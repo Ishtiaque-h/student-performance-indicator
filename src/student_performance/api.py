@@ -293,7 +293,7 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
     logger.info(f"Received prediction request with ID: {request_id}")
     start = time.perf_counter()
     status_code = 200
-    normalized_payload: Dict[str, Any] = {}
+    normalized_payload: Dict[str, Any] | None = None
     score_prediction: float | None = None
 
     try:
@@ -340,7 +340,7 @@ def predict_one(payload: Dict[str, Any], request: Request) -> dict:
                 endpoint="/predict",
                 status_code=status_code,
                 latency_ms=(time.perf_counter() - start) * 1000.0,
-                features=normalized_payload if normalized_payload else payload,
+                features=normalized_payload if normalized_payload is not None else payload,
                 prediction=score_prediction,
             )
 
@@ -407,7 +407,7 @@ def predict_batch(payload: List[Dict[str, Any]], request: Request) -> dict:
         if inference_logger is not None:
             model_version = pipeline.get_model_version() if pipeline else "unknown"
             latency_ms = (time.perf_counter() - start) * 1000.0
-            if normalized_items and assessments:
+            if len(normalized_items) > 0 and len(normalized_items) == len(assessments):
                 for idx, (item, assessment) in enumerate(zip(normalized_items, assessments)):
                     inference_logger.log_event(
                         request_id=f"{request_id}:{idx}",
